@@ -75,6 +75,24 @@ async def test_backfill_collects_every_record_then_goes_live(
     assert status(worker.writer)["last_poll_at"] is not None
 
 
+async def test_a_stopped_worker_leaves_the_backfill_where_it_was(
+    source: FakeSource, clock: FakeTime, workers: Callable[..., Worker]
+) -> None:
+    source.publish(100_000)
+    worker = workers()
+    await run_until(worker, lambda: len(stored(worker.writer)) > 0, seconds=20)
+
+    saved = len(stored(worker.writer))
+    assert 0 < saved < 100_000
+    active = worker.writer.active_generation(SOURCE)
+    assert active is not None
+    assert active.backfill_completed_at is None
+    assert state(worker.writer) != SourceState.LIVE
+    # The committed pages are kept, so the next run resumes from them.
+    covered = sum(entry.cursor - entry.lower for entry in worker.writer.ranges(active.id))
+    assert covered >= saved
+
+
 async def test_backfill_stays_within_its_concurrency_and_rate(
     source: FakeSource, clock: FakeTime, workers: Callable[..., Worker]
 ) -> None:

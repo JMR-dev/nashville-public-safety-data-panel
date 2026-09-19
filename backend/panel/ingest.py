@@ -4,7 +4,7 @@ import asyncio
 import math
 import random
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -225,15 +225,6 @@ class ArcGIS:
         if page.exceeded and not ids:
             raise SourceError("Source reported more records but returned none")
         return page
-
-    async def ids(self, oids: Sequence[int]) -> set[int]:
-        """Which of the given OBJECTIDs the source currently publishes."""
-        where = f"OBJECTID IN ({','.join(str(oid) for oid in oids)})"
-        data = await self.request({"where": where, "returnIdsOnly": "true"})
-        found = as_list(data.get("objectIds") or [])
-        if found is None:
-            raise SourceError("Source response has no OBJECTID list")
-        return {_objectid(oid) for oid in found}
 
     async def _features(self, params: dict[str, str]) -> Page:
         data = await self.request(params)

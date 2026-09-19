@@ -2,7 +2,7 @@
 
 It answers the queries this project sends and rejects anything else, so the worker is exercised
 against the source's real shape: keyset pages bounded by OBJECTID, a received-time filter for
-reconciliation, transfer-limit flags, id-only queries, and scripted failures.
+reconciliation, transfer-limit flags, and scripted failures.
 """
 
 import json
@@ -19,7 +19,6 @@ from tests.support import call_row, load_fixture
 BOUND = re.compile(r"OBJECTID > (\d+)")
 UPPER = re.compile(r"OBJECTID <= (\d+)")
 RECEIVED = re.compile(r"Call_Received >= TIMESTAMP '([\d-]{10} [\d:]{8})'")
-IDS = re.compile(r"OBJECTID IN \(([\d,]+)\)")
 EVERYTHING = re.compile(r"^(1=1|\(1=1\))$")
 
 Predicate = Callable[[str], Callable[[int], bool]]
@@ -140,10 +139,6 @@ class FakeSource:
         if selected is None:
             message = {"code": 400, "message": f"Unsupported where clause: {params.get('where')}"}
             return httpx.Response(200, json={"error": message})
-        if params.get("returnIdsOnly") == "true":
-            return httpx.Response(
-                200, json={"objectIdFieldName": "OBJECTID", "objectIds": sorted(selected)}
-            )
         descending = params.get("orderByFields", "").endswith("DESC")
         ordered = sorted(selected, reverse=descending)
         limit = int(params.get("resultRecordCount", str(self.max_record_count)))
@@ -162,7 +157,6 @@ class FakeSource:
         builders: tuple[tuple[re.Pattern[str], Predicate], ...] = (
             (BOUND, self.after),
             (UPPER, self.up_to),
-            (IDS, self.among),
             (RECEIVED, self.received_after),
         )
         remaining = where
@@ -186,11 +180,6 @@ class FakeSource:
     def up_to(value: str) -> Callable[[int], bool]:
         upper = int(value)
         return lambda oid: oid <= upper
-
-    @staticmethod
-    def among(value: str) -> Callable[[int], bool]:
-        listed = {int(part) for part in value.split(",")}
-        return lambda oid: oid in listed
 
     def received_after(self, timestamp: str) -> Callable[[int], bool]:
         moment = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)

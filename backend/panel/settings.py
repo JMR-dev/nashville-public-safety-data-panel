@@ -24,9 +24,9 @@ class Settings(BaseSettings):
         "(+https://github.com/JMR-dev/nashville-public-safety-data-panel)"
     )
     backfill_concurrency: int = Field(default=32, ge=1, le=32)
-    writer_queue: int = Field(default=64, ge=1)
     window_hours: int = Field(default=48, ge=1)
     window_interval_seconds: float = Field(default=300, gt=0)
+    # The hour in America/Chicago at which the nightly reconciliation may run.
     nightly_hour: int = Field(default=3, ge=0, le=23)
     degraded_wait_seconds: float = Field(default=60, ge=60)
     request_timeout_seconds: float = Field(default=30, gt=0)

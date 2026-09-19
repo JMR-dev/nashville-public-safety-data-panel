@@ -4,6 +4,9 @@ One worker owns the database's writer lock. It backfills a captured OBJECTID bou
 disjoint resumable ranges, then polls continuously, giving live polling priority and fitting
 reconciliation into the same paced request stream. Browser activity never reaches the source:
 this worker is the only thing that talks to it.
+
+Writes are bounded by construction: each range waits for its own page to be committed before
+fetching the next, so no more pages are in flight than the configured concurrency allows.
 """
 
 import asyncio
@@ -88,6 +91,7 @@ class Worker:
         self.source = ArcGIS(client, settings.source_url, self.live_pacer)
         self.bulk = ArcGIS(client, settings.source_url, self.backfill_pacer)
         self._writes = asyncio.Lock()
+        self._stop = asyncio.Event()
         self._generation: Generation | None = None
         self._catching_up = False
         self._checked_at: float | None = None
@@ -102,11 +106,11 @@ class Worker:
     # Main loop
 
     async def run(self, stop: asyncio.Event | None = None) -> None:
-        stopping = stop if stop is not None else asyncio.Event()
+        self._stop = stop if stop is not None else asyncio.Event()
         self.writer.lock()
         self.writer.initialize()
         await self._status(state=SourceState.STARTING)
-        while not stopping.is_set():
+        while not self._stop.is_set():
             try:
                 await self._cycle()
             except SchemaConflict as conflict:
@@ -224,18 +228,18 @@ class Worker:
             for task in ranges:
                 task.cancel()
             await asyncio.gather(*ranges, return_exceptions=True)
-        # Every range has completed, so the boundary is complete.
-        await self._write(self.writer.complete_backfill, generation.id)
-        self._generation = self.writer.generation(generation.id)
-        self._window_at = self.monotonic()
-        self._full_at = self.now()
-        await self._recovered()
+        # A stopped worker leaves ranges unfinished; the boundary completes only when they all do.
+        if await self._write(self.writer.complete_backfill, generation.id):
+            self._generation = self.writer.generation(generation.id)
+            self._window_at = self.monotonic()
+            self._full_at = self.now()
+            await self._recovered()
 
     async def _backfill_range(
         self, generation: Generation, entry: RangeCheckpoint, room: asyncio.Semaphore
     ) -> None:
         cursor = entry.cursor
-        while True:
+        while not self._stop.is_set():
             async with room:
                 page = await self.bulk.page(cursor, entry.upper)
             self._verify(page.rows, generation.id)
@@ -332,7 +336,7 @@ class Worker:
             problems=conflict.problems,
         )
         await self._status(state=SourceState.SCHEMA_INCOMPATIBLE, detail=str(conflict))
-        await self.sleep(self.settings.window_interval_seconds)
+        await self._pause(self.settings.window_interval_seconds)
 
     async def _degrade(self, failure: SourceError) -> None:
         """Keep the collected data, report the problem, and wait before trying again."""
@@ -347,7 +351,18 @@ class Worker:
             degraded_since=now,
             retry_at=now + round(wait * 1000),
         )
-        await self.sleep(wait)
+        await self._pause(wait)
+
+    async def _waited(self, seconds: float) -> None:
+        await self.sleep(seconds)
+
+    async def _pause(self, seconds: float) -> None:
+        """Wait, but return at once when the worker is asked to stop."""
+        waiting: asyncio.Task[None] = asyncio.create_task(self._waited(seconds))
+        stopping: asyncio.Task[bool] = asyncio.create_task(self._stop.wait())
+        await asyncio.wait([waiting, stopping], return_when=asyncio.FIRST_COMPLETED)
+        waiting.cancel()
+        stopping.cancel()
 
     # Writes
 

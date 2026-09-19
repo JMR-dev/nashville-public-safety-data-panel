@@ -327,32 +327,6 @@ async def test_maximum_reads_the_highest_objectid() -> None:
     assert sent[0]["resultRecordCount"] == "1"
 
 
-async def test_ids_lists_matching_objectids() -> None:
-    clock = Clock()
-    bodies: list[dict[str, Any]] = [
-        {"objectIdFieldName": "OBJECTID", "objectIds": [9, 3]},
-        {"objectIdFieldName": "OBJECTID", "objectIds": None},
-        {"objectIdFieldName": "OBJECTID", "objectIds": ["3"]},
-        {"objectIdFieldName": "OBJECTID", "objectIds": "3"},
-    ]
-    sent: list[dict[str, str]] = []
-
-    def respond(request: httpx.Request) -> httpx.Response:
-        sent.append(params(request))
-        return httpx.Response(200, json=bodies.pop(0))
-
-    arcgis, client = source(respond, Pacer(sleep=clock.sleep, clock=clock.time))
-    async with client:
-        assert await arcgis.ids([3, 9, 12]) == {3, 9}
-        assert await arcgis.ids([4]) == set()
-        with pytest.raises(SourceError):
-            await arcgis.ids([3])
-        with pytest.raises(SourceError, match="no OBJECTID list"):
-            await arcgis.ids([3])
-    assert sent[0]["where"] == "OBJECTID IN (3,9,12)"
-    assert sent[0]["returnIdsOnly"] == "true"
-
-
 def test_received_since_uses_the_layers_utc_timestamp_syntax() -> None:
     moment = int(datetime(2026, 9, 17, 5, 30, 15, tzinfo=UTC).timestamp() * 1000)
     assert received_since(moment) == "Call_Received >= TIMESTAMP '2026-09-17 05:30:15'"
