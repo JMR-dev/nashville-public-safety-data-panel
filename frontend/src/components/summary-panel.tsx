@@ -2,6 +2,7 @@ import { useId } from "react";
 
 import { type Activity as ActivityData, activityBuckets } from "../activity.ts";
 import type { Summary, TypeCount } from "../api/types.ts";
+import { describeCallType } from "../filters.ts";
 import type { TimeWindow } from "../time.ts";
 
 export interface SummaryPanelProperties {
@@ -28,7 +29,7 @@ function TypeBars({ entries, other }: { entries: TypeCount[]; other: number }) {
       <ol className="type-bars" aria-labelledby={headingId}>
         {entries.map((entry) => (
           <li key={entry.Tencode_Description ?? ""}>
-            <span className="type-name">{entry.Tencode_Description ?? "Type not published"}</span>
+            <span className="type-name">{describeCallType(entry.Tencode_Description)}</span>
             <span className="bar-track" aria-hidden="true">
               <span className="bar" style={{ width: share(entry.count, largest) }} />
             </span>

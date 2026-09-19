@@ -1,6 +1,7 @@
 import { useId, useRef } from "react";
 
 import type { FeedCall } from "../api/types.ts";
+import { describeCallType } from "../filters.ts";
 import { formatCallTime } from "../time.ts";
 
 export interface FeedProperties {
@@ -15,11 +16,15 @@ export interface FeedProperties {
   selectedId: string | undefined;
   rangeText: string;
   backfilling: boolean;
+  // When the source last published a call, whatever the chosen period holds.
+  newestCallAt: string | undefined;
+  canWiden: boolean;
   onLoadMore: () => void;
   onShowNew: () => void;
   onTogglePause: () => void;
   onSelect: (id: string) => void;
   onRetry: () => void;
+  onWiden: () => void;
 }
 
 // Upstream publishes a block number and street name; neither is an exact address.
@@ -57,7 +62,7 @@ function CallRow({
           onSelect(call.id);
         }}
       >
-        <span className="call-type">{record.Tencode_Description ?? "Call type not published"}</span>
+        <span className="call-type">{describeCallType(record.Tencode_Description)}</span>
         {call.receivedAt === null ? (
           <span className="call-time">Time not published</span>
         ) : (
@@ -96,10 +101,20 @@ function Contents(properties: FeedProperties) {
     );
   }
   return properties.calls.length === 0 ? (
-    <p className="feed-note">
-      No calls match these filters in {properties.rangeText}.
-      {properties.backfilling && " History is still loading, so older calls may appear later."}
-    </p>
+    <div className="feed-note">
+      <p>
+        No calls match these filters in {properties.rangeText}.
+        {properties.backfilling && " History is still loading, so older calls may appear later."}
+      </p>
+      {properties.newestCallAt !== undefined && (
+        <p>{`The newest call the source has published is ${formatCallTime(properties.newestCallAt)}.`}</p>
+      )}
+      {properties.canWiden && (
+        <button type="button" onClick={properties.onWiden}>
+          Show the last 7 days
+        </button>
+      )}
+    </div>
   ) : undefined;
 }
 

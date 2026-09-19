@@ -9,6 +9,7 @@ import MarkerClusterGroup from "react-leaflet-cluster";
 
 import type { MapCall, MapCallsResult } from "../api/types.ts";
 import { MAP_CENTER, MAP_ZOOM, TILE_ATTRIBUTION, TILE_URL } from "../config.ts";
+import { describeCallType } from "../filters.ts";
 import { formatCallTime } from "../time.ts";
 import { describePlace } from "./feed.tsx";
 
@@ -35,7 +36,7 @@ function isLocated(call: MapCall): call is Located {
 }
 
 export function markerLabel(call: MapCall): string {
-  const type = call.record.Tencode_Description ?? "Call type not published";
+  const type = describeCallType(call.record.Tencode_Description);
   const place = describePlace(call.record.Block, call.record.Street_Name);
   const time = call.receivedAt === null ? "time not published" : formatCallTime(call.receivedAt);
   return `${type}, ${place}, ${time}`;

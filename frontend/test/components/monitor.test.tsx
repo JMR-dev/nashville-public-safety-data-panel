@@ -128,6 +128,66 @@ describe("Monitor", () => {
     expect(Date.parse(latest.filter.until)).toBeGreaterThanOrEqual(T0 + 5 * 60_000);
   });
 
+  test("offers a wider period when the day holds no calls", async () => {
+    // Metro Nashville publishes in batches, so the last day can be empty while the source is fine.
+    const backend = fakeBackend();
+    const { api } = backend;
+    const user = userEvent.setup();
+    backend.api
+      .on("Status", () => ({
+        serverTime: iso(T0),
+        sourceStatus: [liveStatus({ latestCallReceivedAt: iso(T0 - 36 * HOUR) })],
+      }))
+      .on("Feed", () => ({
+        calls: {
+          asOfVersion: backend.version,
+          pageInfo: { endCursor: null, hasNextPage: false },
+          nodes: [],
+        },
+      }));
+    renderWithClient(<Monitor openEvents={openFakeSource} />);
+    expect(
+      await screen.findByText("The newest call the source has published is Sep 18, 12:00 AM CDT."),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Show the last 7 days" }));
+
+    await waitFor(() => {
+      const { filter } = api.calls("Feed").at(-1) as { filter: CallFilter };
+      expect(filter.since).toBe(iso(T0 - 7 * 24 * HOUR));
+    });
+    expect(screen.getByLabelText("Date range")).toHaveValue("7d");
+    // The reader is already looking at the wider period, so the offer is gone.
+    expect(screen.queryByRole("button", { name: "Show the last 7 days" })).not.toBeInTheDocument();
+  });
+
+  test("says history is still loading before the source has published anything", async () => {
+    const backend = fakeBackend();
+    backend.api
+      .on("Status", () => ({
+        serverTime: iso(T0),
+        sourceStatus: [
+          liveStatus({
+            state: "BACKFILLING",
+            latestCallReceivedAt: null,
+            backfill: { fraction: 0.2, rangesTotal: 5, rangesCompleted: 1, completedAt: null },
+          }),
+        ],
+      }))
+      .on("Feed", () => ({
+        calls: {
+          asOfVersion: backend.version,
+          pageInfo: { endCursor: null, hasNextPage: false },
+          nodes: [],
+        },
+      }));
+    renderWithClient(<Monitor openEvents={openFakeSource} />);
+    expect(
+      await screen.findByText(/History is still loading, so older calls may appear later/),
+    ).toBeVisible();
+    expect(screen.queryByText(/newest call the source has published/)).not.toBeInTheDocument();
+  });
+
   test("ignores a notification for the version already shown", async () => {
     const backend = fakeBackend();
     const { api } = backend;

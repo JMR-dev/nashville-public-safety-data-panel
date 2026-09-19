@@ -1,7 +1,13 @@
 import { useId, useState } from "react";
 
 import type { FilterValues } from "../api/types.ts";
-import { DEFAULT_FILTERS, type Filters, isDefault, rangeProblem } from "../filters.ts";
+import {
+  DEFAULT_FILTERS,
+  describeCallType,
+  type Filters,
+  isDefault,
+  rangeProblem,
+} from "../filters.ts";
 import { addDays, type RangePreset } from "../time.ts";
 
 interface FilterBarProperties {
@@ -26,10 +32,18 @@ interface ValueSelectProperties {
   everything: string;
   value: string;
   options: string[] | undefined;
+  describe?: (value: string) => string;
   onChange: (value: string) => void;
 }
 
-function ValueSelect({ label, everything, value, options = [], onChange }: ValueSelectProperties) {
+function ValueSelect({
+  label,
+  everything,
+  value,
+  options = [],
+  describe = (option) => option,
+  onChange,
+}: ValueSelectProperties) {
   const id = useId();
   // A chosen value stays listed while options load or after it leaves the period.
   const listed = value === "" || options.includes(value) ? options : [value, ...options];
@@ -46,7 +60,7 @@ function ValueSelect({ label, everything, value, options = [], onChange }: Value
         <option value="">{everything}</option>
         {listed.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {describe(option)}
           </option>
         ))}
       </select>
@@ -180,6 +194,7 @@ export function FilterBar({ filters, values, today, onChange }: FilterBarPropert
         everything="All call types"
         value={filters.type}
         options={values?.Tencode_Description}
+        describe={describeCallType}
         onChange={(type) => {
           onChange({ ...filters, type });
         }}

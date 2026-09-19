@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   callFilter,
+  describeCallType,
   DEFAULT_FILTERS,
   describeRange,
   isDefault,
@@ -70,5 +71,19 @@ describe("rangeProblem", () => {
     ["2026-06-01", "2026-09-19", "Choose a range of 92 days or fewer."],
   ])("from %s through %s", (first, last, problem) => {
     expect(rangeProblem(first, last, "2026-09-19")).toBe(problem);
+  });
+});
+
+describe("describeCallType", () => {
+  test("labels the ten-codes the source publishes as codes", () => {
+    // Metro Nashville publishes Tencode_Description as the numeric code itself.
+    expect(describeCallType("43")).toBe("Code 43");
+    expect(describeCallType("3")).toBe("Code 3");
+  });
+
+  test("shows published text unchanged and says when there is none", () => {
+    expect(describeCallType("ALARM - BURGLAR")).toBe("ALARM - BURGLAR");
+    expect(describeCallType("10-50")).toBe("10-50");
+    expect(describeCallType(null)).toBe("Call type not published");
   });
 });

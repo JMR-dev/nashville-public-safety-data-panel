@@ -24,6 +24,9 @@ function renderFeed(overrides: Partial<FeedProperties> = {}) {
     onTogglePause: vi.fn(),
     onSelect: vi.fn(),
     onRetry: vi.fn(),
+    onWiden: vi.fn(),
+    newestCallAt: undefined,
+    canWiden: false,
     ...overrides,
   };
   render(<Feed {...properties} />);
@@ -151,6 +154,31 @@ describe("Feed", () => {
   test("says when no calls match the filters", () => {
     renderFeed({ calls: [] });
     expect(screen.getByText("No calls match these filters in the last 24 hours.")).toBeVisible();
+  });
+
+  test("shows a published ten-code as a code", () => {
+    renderFeed({ calls: [feedCall(9, { Tencode_Description: "43" })] });
+    expect(rows()[0]).toHaveTextContent("Code 43");
+  });
+
+  test("points at the newest published call when the period holds none", async () => {
+    const user = userEvent.setup();
+    const properties = renderFeed({
+      calls: [],
+      newestCallAt: "2026-09-18T04:58:00+00:00",
+      canWiden: true,
+    });
+    expect(
+      screen.getByText("The newest call the source has published is Sep 17, 11:58 PM CDT."),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Show the last 7 days" }));
+    expect(properties.onWiden).toHaveBeenCalledOnce();
+  });
+
+  test("offers no wider period when the reader already chose one", () => {
+    renderFeed({ calls: [], newestCallAt: "2026-09-18T04:58:00+00:00", canWiden: false });
+    expect(screen.getByText(/newest call the source has published/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Show the last 7 days" })).not.toBeInTheDocument();
   });
 
   test("notes that history is still loading when nothing matches yet", () => {

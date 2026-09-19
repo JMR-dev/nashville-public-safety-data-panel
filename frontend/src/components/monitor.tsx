@@ -48,6 +48,7 @@ interface DashboardProperties {
   shownTime: number;
   paused: boolean;
   backfilling: boolean;
+  newestCallAt: string | undefined;
   selectedId: string | undefined;
   view: View;
   onFilters: (filters: Filters) => void;
@@ -119,6 +120,8 @@ function Dashboard(properties: DashboardProperties) {
           selectedId={selectedId}
           rangeText={rangeText}
           backfilling={properties.backfilling}
+          newestCallAt={properties.newestCallAt}
+          canWiden={filters.range.kind === "preset" && filters.range.preset === "24h"}
           onLoadMore={() => {
             void feed.fetchNextPage();
           }}
@@ -127,6 +130,9 @@ function Dashboard(properties: DashboardProperties) {
           onSelect={properties.onSelect}
           onRetry={() => {
             void feed.refetch();
+          }}
+          onWiden={() => {
+            properties.onFilters({ ...filters, range: { kind: "preset", preset: "7d" } });
           }}
         />
         <CallMap
@@ -222,6 +228,7 @@ export function Monitor({ openEvents }: { openEvents: OpenVersionSource }) {
           shownTime={frozenAt ?? liveTime}
           paused={isPaused}
           backfilling={status.data?.sourceStatus[0]?.state === "BACKFILLING"}
+          newestCallAt={status.data?.sourceStatus[0]?.latestCallReceivedAt ?? undefined}
           selectedId={selectedId}
           view={view}
           onFilters={(next) => {

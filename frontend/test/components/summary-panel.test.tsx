@@ -43,12 +43,19 @@ describe("SummaryPanel", () => {
   test("names types the source did not publish and omits an empty other row", () => {
     renderPanel({
       summary: summary({
-        types: { otherCount: 0, entries: [{ Tencode_Description: null, count: 3 }] },
+        types: {
+          otherCount: 0,
+          entries: [
+            { Tencode_Description: null, count: 3 },
+            { Tencode_Description: "43", count: 2 },
+          ],
+        },
       }),
     });
     const types = within(screen.getByRole("list", { name: "Most common call types" }));
     expect(types.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-      "Type not published3",
+      "Call type not published3",
+      "Code 432",
     ]);
   });
 

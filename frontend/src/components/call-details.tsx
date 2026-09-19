@@ -2,6 +2,7 @@ import { useCallback, useId } from "react";
 
 import { useCallDetail } from "../api/queries.ts";
 import type { CallDetail } from "../api/types.ts";
+import { describeCallType } from "../filters.ts";
 import { formatCallTime } from "../time.ts";
 import { describeArea, describePlace } from "./feed.tsx";
 
@@ -110,7 +111,7 @@ export function CallDetails({ id, onClose }: CallDetailsProperties) {
     node?.focus();
   }, []);
   const call = query.data;
-  const title = call ? (call.record.Tencode_Description ?? "Call type not published") : "Call details";
+  const title = call ? describeCallType(call.record.Tencode_Description) : "Call details";
 
   return (
     <aside

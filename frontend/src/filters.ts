@@ -57,6 +57,15 @@ export function callFilter(filters: Filters, window: TimeWindow): CallFilter {
   };
 }
 
+// Metro Nashville publishes Tencode_Description as the ten-code itself ("43"), not a name for it,
+// and publishes no table of names, so a numeric value is shown as the code it is.
+export function describeCallType(value: string | null): string {
+  if (value === null) {
+    return "Call type not published";
+  }
+  return /^\d+$/.test(value) ? `Code ${value}` : value;
+}
+
 export function describeRange(range: DateRange): string {
   if (range.kind === "custom") {
     const first = dayFormat.format(Date.parse(range.first));
