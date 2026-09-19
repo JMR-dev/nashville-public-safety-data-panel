@@ -25,10 +25,18 @@ packages = ["backend/panel"]
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
-addopts = "--cov=panel --cov=backend/migrations --cov-branch --cov-report=term-missing --cov-report=json --cov-fail-under=100"
+filterwarnings = [
+    "error",
+    # Approved exception (2026-09-19, docs/dependency-decisions.md): uvloop 0.22.1 calls
+    # asyncio.iscoroutinefunction, deprecated in Python 3.14 and slated for removal in 3.16.
+    # Python attributes the warning to the caller of run_in_executor, so it is matched by
+    # message. Strict Pyright separately reports any use of deprecated APIs in our own code.
+    "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning",
+]
+addopts = "--cov=backend/panel --cov-branch --cov-report=term-missing --cov-report=json --cov-fail-under=100"
 
 [tool.coverage.run]
-source = ["backend/panel", "backend/migrations"]
+source = ["backend/panel"]
 branch = true
 parallel = true
 
@@ -39,12 +47,14 @@ show_missing = true
 [tool.ruff]
 target-version = "py314"
 line-length = 100
+src = ["backend"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [tool.pyright]
-include = ["backend/panel", "backend/migrations"]
+include = ["backend/panel", "backend/tests"]
+extraPaths = ["backend"]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
 venvPath = "."
