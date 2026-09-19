@@ -6,9 +6,14 @@ Three services are served, each on its own port:
 * the API, on a populated database;
 * the same API on a database that was never migrated, which is what an unready deployment
   looks like to ``/readyz``;
-* a probe that reads the API's event stream over HTTP and reports the response it got. The
-  stream never ends, and the Bruno CLI cannot read a response that never ends, so this is how
-  a collection asserts the stream's HTTP contract.
+* a control service, which reads the API's event stream over HTTP and reports the response it
+  got, because the stream never ends and the Bruno CLI cannot read a response that never ends,
+  and which publishes another call on request, and takes the published calls back again, so
+  the Playwright flows watch a live update arrive the way a browser would and still start from
+  the same dataset whichever order they run in.
+
+The API reports a fixed clock as its own time, and the records are timestamped by that same
+clock, so the dashboard's "last 24 hours" always covers the fixture data.
 
 Run it with a command to run against it::
 
@@ -20,13 +25,14 @@ or on its own, until interrupted, for Playwright and for looking at the dashboar
 """
 
 import argparse
+import asyncio
 import logging
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-from collections.abc import Generator, Sequence
+from collections.abc import Generator, Iterable, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -37,12 +43,13 @@ from fastapi import FastAPI
 
 from panel.api.app import create_app
 from panel.settings import Settings
-from tests.api_support import populate
-from tests.support import ManualClock
+from panel.store import Progress, Writer
+from tests.api_support import ROWS, T0, populate
+from tests.support import ManualClock, call_row
 
 API_PORT = 8099
 UNREADY_PORT = 8098
-PROBE_PORT = 8097
+CONTROL_PORT = 8097
 HOST = "127.0.0.1"
 START_TIMEOUT = 30.0
 
@@ -66,9 +73,10 @@ class Background:
         self.thread.join(timeout=10)
 
 
-def probe_app(target: str) -> FastAPI:
-    """Reports what the API's event stream answered, including the first event it sent."""
+def control_app(target: str, database: Path, generation: int) -> FastAPI:
+    """Reads the API's event stream, and publishes a call the way the worker would."""
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    published: list[int] = []
 
     @app.get("/events-probe")
     async def events_probe() -> dict[str, Any]:
@@ -85,6 +93,19 @@ def probe_app(target: str) -> FastAPI:
             "firstEvent": frame,
         }
 
+    @app.post("/publish-call")
+    async def publish_call() -> dict[str, Any]:
+        """Commit one more call, so connected browsers are told the data changed."""
+        oid = len(ROWS) + 1 + len(published)
+        published.append(oid)
+        return await asyncio.to_thread(commit_call, database, generation, oid)
+
+    @app.post("/retract-calls")
+    async def retract_calls() -> dict[str, int]:
+        """Take back every published call, so a flow starts from the fixture dataset."""
+        retracted = await asyncio.to_thread(retract, database, generation, tuple(published))
+        return {"retracted": retracted}
+
     @app.get("/healthz")
     async def liveness() -> dict[str, str]:
         return {"status": "ok"}
@@ -92,10 +113,38 @@ def probe_app(target: str) -> FastAPI:
     return app
 
 
-def fixture_database(directory: Path) -> Path:
+def commit_call(database: Path, generation: int, oid: int) -> dict[str, Any]:
+    row = call_row(
+        oid,
+        Call_Received=T0 - 60_000,
+        ZONE_="15",
+        Sector="C1",
+        Tencode_Description="SHOTS FIRED",
+        Disposition_Description=None,
+    )
+    writer = Writer(database, clock=ManualClock(T0))
+    writer.lock()
+    try:
+        writer.commit_page(generation, [row], Progress("live", cursor=oid))
+    finally:
+        writer.close()
+    return {"id": f"{generation}:{oid}", "OBJECTID": oid}
+
+
+def retract(database: Path, generation: int, oids: Iterable[int]) -> int:
+    writer = Writer(database, clock=ManualClock(T0))
+    writer.lock()
+    try:
+        return writer.mark_removed(generation, oids)
+    finally:
+        writer.close()
+
+
+def fixture_database(directory: Path) -> tuple[Path, int]:
+    """The fixture dataset, timestamped by the same fixed clock the API reports as its own."""
     database = directory / "panel.sqlite"
-    populate(database, ManualClock())
-    return database
+    generation = populate(database, ManualClock(T0))
+    return database, generation
 
 
 def wait_for(url: str) -> None:
@@ -113,16 +162,19 @@ def wait_for(url: str) -> None:
 @contextmanager
 def fixture_services(directory: Path) -> Generator[Sequence[Background]]:
     """The API, an unready API, and the event-stream probe, all serving and answering."""
-    settings = Settings(database=fixture_database(directory))
+    database, generation = fixture_database(directory)
+    settings = Settings(database=database)
     # The unready API cannot read a data version from a database with no tables, and says so on
     # every poll. That is the behaviour under test, so the harness keeps it out of the output.
     logging.getLogger("panel.api.events").setLevel(logging.CRITICAL)
     unready = Settings(database=directory / "unmigrated.sqlite", event_poll_seconds=60)
-    api = Background(create_app(settings), API_PORT)
+    # The API reports the fixture clock as its own time, so the dashboard builds its windows
+    # around the fixture data instead of around whatever day the suite happens to run on.
+    api = Background(create_app(settings, clock=ManualClock(T0)), API_PORT)
     services = [
         api,
         Background(create_app(unready), UNREADY_PORT),
-        Background(probe_app(api.url), PROBE_PORT),
+        Background(control_app(api.url, database, generation), CONTROL_PORT),
     ]
     for service in services:
         service.start()
