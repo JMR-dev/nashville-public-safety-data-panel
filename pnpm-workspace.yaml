@@ -1,0 +1,5 @@
+packages:
+  - frontend
+allowBuilds:
+  protobufjs: true
+  esbuild: true
