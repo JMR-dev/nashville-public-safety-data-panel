@@ -3,11 +3,8 @@
 import fcntl
 import hashlib
 import json
-import os
-import sqlite3
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from contextlib import closing
 from dataclasses import dataclass
 from enum import StrEnum
 from io import TextIOWrapper
@@ -133,6 +130,9 @@ class Writer:
         self._lock: TextIOWrapper | None = None
 
     def lock(self) -> None:
+        """Take the writer lock, or keep the one this writer already holds."""
+        if self._lock is not None:
+            return
         handle = self.path.with_name(self.path.name + ".writer-lock").open("w")
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -284,42 +284,57 @@ class Writer:
             pending = version + 1
             by_id = {int(row["OBJECTID"]): row for row in rows}
             existing = self._existing(connection, generation, list(by_id))
-            inserted = changed = 0
+            written: list[dict[str, Any]] = []
             unchanged: list[int] = []
+            inserted = changed = 0
             for oid, row in by_id.items():
                 digest = fingerprint(row)
-                values: dict[str, Any] = {name: row.get(name) for name in ATTRIBUTE_FIELDS}
-                values.update(raw=dict(row), fingerprint=digest, last_seen_at=now)
                 previous = existing.get(oid)
-                if previous is None:
-                    connection.execute(
-                        insert(calls).values(
-                            generation=generation,
-                            OBJECTID=oid,
-                            first_seen_at=now,
-                            last_changed_at=now,
-                            first_seen_version=pending,
-                            changed_version=pending,
-                            source_present=True,
-                            **values,
-                        )
-                    )
-                    inserted += 1
-                elif previous != (digest, True):
-                    connection.execute(
-                        update(calls)
-                        .where(calls.c.generation == generation, calls.c.OBJECTID == oid)
-                        .values(
-                            last_changed_at=now,
-                            changed_version=pending,
-                            source_present=True,
-                            removed_at=None,
-                            **values,
-                        )
-                    )
-                    changed += 1
-                else:
+                if previous == (digest, True):
                     unchanged.append(oid)
+                    continue
+                inserted += previous is None
+                changed += previous is not None
+                values: dict[str, Any] = {name: row.get(name) for name in ATTRIBUTE_FIELDS}
+                written.append(
+                    {
+                        **values,
+                        "generation": generation,
+                        "OBJECTID": oid,
+                        "raw": dict(row),
+                        "fingerprint": digest,
+                        "first_seen_at": now,
+                        "last_seen_at": now,
+                        "last_changed_at": now,
+                        "first_seen_version": pending,
+                        "changed_version": pending,
+                        "source_present": True,
+                        "removed_at": None,
+                    }
+                )
+            if written:
+                # One statement for the whole page. A record already stored keeps the time and
+                # version it was first seen at; everything the source publishes is replaced.
+                statement = insert(calls)
+                connection.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[calls.c.generation, calls.c.OBJECTID],
+                        set_={
+                            name: statement.excluded[name]
+                            for name in (
+                                *ATTRIBUTE_FIELDS,
+                                "raw",
+                                "fingerprint",
+                                "last_seen_at",
+                                "last_changed_at",
+                                "changed_version",
+                                "source_present",
+                                "removed_at",
+                            )
+                        },
+                    ),
+                    written,
+                )
             for chunk in _chunks(unchanged):
                 connection.execute(
                     update(calls)
@@ -328,7 +343,7 @@ class Writer:
                 )
             if progress is not None:
                 self._advance(connection, generation, progress, now)
-            modified = bool(inserted or changed)
+            modified = bool(written)
             if modified:
                 self._set_version(connection, pending)
             self._touch(connection, generation, now, modified=modified)
@@ -430,17 +445,6 @@ class Writer:
     def data_version(self) -> int:
         with self.engine.connect() as connection:
             return self._version(connection)
-
-    def backup(self, target: Path) -> None:
-        """Copy a consistent snapshot with SQLite's online backup, then publish it atomically."""
-        target.parent.mkdir(parents=True, exist_ok=True)
-        partial = target.with_name(target.name + ".partial")
-        with (
-            closing(sqlite3.connect(self.path)) as source,
-            closing(sqlite3.connect(partial)) as destination,
-        ):
-            source.backup(destination)
-        os.replace(partial, target)
 
     # Transaction helpers
 

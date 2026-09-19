@@ -1,6 +1,5 @@
 """Ingestion persistence: pages, checkpoints, provenance, and presence commit atomically."""
 
-import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -9,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from panel.store import Progress, Provenance, SourceState, Writer, WriterBusy
-from panel.tables import calls, checkpoints, source_status
+from panel.tables import calls, source_status
 from tests.support import SOURCE, URL, ManualClock, call_row
 
 PROVENANCE = Provenance(url=URL, service_item_id="item-1", layer_name="MNPD_Calls_for_Service")
@@ -242,27 +241,6 @@ def test_only_one_writer_may_open_a_database(database: Path, clock: ManualClock)
     first.close()
     second.lock()
     second.close()
-
-
-def test_online_backup_is_a_complete_restorable_copy(
-    writer: Writer, tmp_path: Path, clock: ManualClock
-) -> None:
-    generation = writer.start_generation(SOURCE, PROVENANCE, "initial").id
-    writer.commit_page(generation, [call_row(1), call_row(2)], Progress("live", cursor=2))
-    reader = sqlite3.connect(writer.path)
-    reader.execute("BEGIN")
-    reader.execute("SELECT count(*) FROM police_calls").fetchone()
-    target = tmp_path / "backups" / "panel.sqlite"
-    writer.backup(target)
-    reader.rollback()
-    reader.close()
-
-    restored = Writer(target, clock=clock)
-    assert restored.checkpoint(generation, "live") == 2
-    assert set(stored(restored, generation)) == {1, 2}
-    with restored.engine.connect() as connection:
-        assert connection.execute(select(checkpoints.c.name)).scalars().all() == ["live"]
-    restored.close()
 
 
 def test_default_clock_records_wall_clock_epoch_milliseconds(database: Path) -> None:
