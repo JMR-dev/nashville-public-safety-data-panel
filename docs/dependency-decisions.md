@@ -42,3 +42,7 @@ Revisit this before adopting Python 3.16, or as soon as a uvloop release stops c
 
 `unicorn/no-null` is turned off for `frontend/test/**` only, approved by the project owner on September 19, 2026. The GraphQL API returns JSON `null` for upstream fields Metro Nashville did not publish. Test fixtures reproduce those responses exactly, and tests check how the interface presents missing values. Application code is still subject to the rule; it only compares values against `null`.
 
+
+`@types/node` 26.6.1 is also a root development dependency, the same age-gated version the
+frontend workspace pins, so that the Playwright configuration and the end-to-end flows are
+type-checked by `tsconfig.json` at the root.

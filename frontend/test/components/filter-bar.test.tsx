@@ -98,6 +98,19 @@ describe("FilterBar", () => {
     expect(onChange).toHaveBeenLastCalledWith(DEFAULT_FILTERS);
   });
 
+  test("shows a ten-code as a code while filtering by the value the source published", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderBar(DEFAULT_FILTERS, {
+      ...FILTER_VALUES,
+      Tencode_Description: ["3", "ALARM - BURGLAR"],
+    });
+    expect(screen.getByRole("option", { name: "Code 3" })).toHaveValue("3");
+
+    await user.selectOptions(screen.getByLabelText("Call type"), "3");
+
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_FILTERS, type: "3" });
+  });
+
   test("pressing Enter in a field does not reload the page", () => {
     renderBar();
     expect(fireEvent.submit(screen.getByRole("search", { name: "Filter calls" }))).toBe(false);

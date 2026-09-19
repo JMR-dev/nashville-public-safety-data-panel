@@ -26,8 +26,11 @@ export default defineConfig({
       stdout: "pipe",
     },
     {
+      // Built into its own directory: this build has the blank tile baked in, so it must not
+      // become the dist/ that gets deployed.
       command:
-        "pnpm --filter frontend build && pnpm --filter frontend exec vite preview --port 4173 --strictPort",
+        "pnpm --filter frontend exec vite build --outDir dist-e2e && " +
+        "pnpm --filter frontend exec vite preview --outDir dist-e2e --port 4173 --strictPort",
       url: DASHBOARD,
       reuseExistingServer: process.env.CI === undefined,
       env: {

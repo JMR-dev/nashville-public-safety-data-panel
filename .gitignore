@@ -8,6 +8,7 @@ coverage.json
 coverage/
 htmlcov/
 dist/
+dist-e2e/
 test-results/
 playwright-report/
 .env

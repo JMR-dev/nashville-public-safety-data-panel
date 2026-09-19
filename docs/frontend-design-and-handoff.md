@@ -2,6 +2,10 @@
 
 Updated September 19, 2026. This records the agreed direction, proposed visual treatment, and the actual implementation checkpoint. The application is not complete or ready to deploy.
 
+## Status after the handoff
+
+Everything from "Present in the repository" onwards describes the repository as it stood at the handoff, not as it stands now. Since then, and as of September 19, 2026: the backend gate passes with 100% line and branch coverage; the frontend is implemented and tested with 100% statements, branches, functions, and lines; the GraphQL API, event stream, health checks, ingestion worker, CLI, and backups exist; the Bruno OpenCollection YAML collections in [`api-tests/`](../api-tests) and the Playwright flows in [`e2e/`](../e2e) run against the fixture-backed API in [`backend/tests/fixture_api.py`](../backend/tests/fixture_api.py). Still outstanding: containers, Quadlets, Ansible, the reverse proxy, CI, and operational documentation.
+
 ## Product direction
 
 The first release is a public, read-only **live activity monitor for Nashville police calls for service**. It should help someone understand recently published calls, their approximate locations, and the source's freshness without needing to understand dispatch codes or ArcGIS.
