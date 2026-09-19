@@ -1,0 +1,24 @@
+query Feed($filter: CallFilter!, $first: Int!, $after: String, $asOfVersion: Int!) {
+  calls(filter: $filter, first: $first, after: $after, asOfVersion: $asOfVersion) {
+    asOfVersion
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+    nodes {
+      id
+      receivedAt
+      hasCoordinates
+      sourcePresent
+      record {
+        OBJECTID
+        Tencode_Description
+        Disposition_Description
+        Block
+        Street_Name
+        ZONE_
+        Sector
+      }
+    }
+  }
+}

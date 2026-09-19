@@ -396,8 +396,8 @@ async def test_invalid_feed_requests_explain_the_problem(
     ("query", "message"),
     [
         (
-            "query($f: CallFilter!) { mapCalls(filter: $f, limit: 5001) { matching } }",
-            "limit must be between 1 and 5000",
+            "query($f: CallFilter!) { mapCalls(filter: $f, limit: 4001) { matching } }",
+            "limit must be between 1 and 4000",
         ),
         (
             "query($f: CallFilter!) { summary(filter: $f) { types(limit: 0) { otherCount } } }",

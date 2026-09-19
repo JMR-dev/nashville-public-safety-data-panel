@@ -21,7 +21,7 @@ def test_defaults_follow_the_agreed_ingestion_and_api_limits(
     assert settings.degraded_wait_seconds == 60
     assert (settings.max_page_size, settings.max_map_results, settings.max_range_days) == (
         200,
-        5000,
+        4000,
         92,
     )
     assert settings.backup_keep == 7

@@ -1,0 +1,18 @@
+query Summary($filter: CallFilter!, $types: Int!) {
+  summary(filter: $filter) {
+    total
+    withCoordinates
+    withoutCoordinates
+    types(limit: $types) {
+      otherCount
+      entries {
+        Tencode_Description
+        count
+      }
+    }
+    hourly {
+      start
+      count
+    }
+  }
+}

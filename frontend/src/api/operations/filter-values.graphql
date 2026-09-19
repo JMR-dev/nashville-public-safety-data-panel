@@ -1,0 +1,8 @@
+query FilterValues($since: DateTime!, $until: DateTime!) {
+  filterValues(since: $since, until: $until) {
+    ZONE_
+    Sector
+    Tencode_Description
+    Disposition_Description
+  }
+}

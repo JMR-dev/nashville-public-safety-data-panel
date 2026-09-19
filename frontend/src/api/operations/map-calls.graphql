@@ -1,0 +1,18 @@
+query MapCalls($filter: CallFilter!, $limit: Int!) {
+  mapCalls(filter: $filter, limit: $limit) {
+    matching
+    withCoordinates
+    truncated
+    calls {
+      id
+      receivedAt
+      record {
+        Latitude
+        Longitude
+        Tencode_Description
+        Block
+        Street_Name
+      }
+    }
+  }
+}

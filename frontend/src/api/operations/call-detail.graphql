@@ -1,0 +1,37 @@
+query CallDetail($id: ID!) {
+  call(id: $id) {
+    id
+    generation
+    receivedAt
+    hasCoordinates
+    sourcePresent
+    removedAt
+    firstSeenAt
+    lastChangedAt
+    additionalAttributes
+    record {
+      OBJECTID
+      Event_Number
+      Complaint_Number
+      Tencode
+      Tencode_Description
+      Tencode_Suffix
+      Tencode_Suffix_Description
+      Disposition_Code
+      Disposition_Description
+      Block
+      Street_Name
+      Unit_Dispatched
+      Shift
+      Sector
+      Mapped_Location
+      POINT_X
+      POINT_Y
+      ZONE_
+      Latitude
+      Longitude
+      RPA
+      Call_Received
+    }
+  }
+}

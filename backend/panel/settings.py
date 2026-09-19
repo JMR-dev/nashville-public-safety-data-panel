@@ -33,7 +33,8 @@ class Settings(BaseSettings):
 
     # API
     max_page_size: int = Field(default=200, ge=1)
-    max_map_results: int = Field(default=5000, ge=1)
+    # The dashboard's map selection at this size costs just under max_cost.
+    max_map_results: int = Field(default=4000, ge=1)
     max_range_days: int = Field(default=92, ge=1)
     max_depth: int = Field(default=6, ge=1)
     max_aliases: int = Field(default=10, ge=1)
