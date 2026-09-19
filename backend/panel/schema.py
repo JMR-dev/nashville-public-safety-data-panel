@@ -1,6 +1,6 @@
 """Compatibility of the published schema with the stored one.
 
-Attributes the source adds are compatible: they are preserved in each record's raw JSON. A known
+Attributes the source adds are compatible: each record keeps them verbatim. A known
 field that disappears, changes type, or carries values of another type is incompatible, and
 ingestion for the source stops until the schema is compatible again.
 """

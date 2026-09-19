@@ -42,8 +42,7 @@ def test_page_rows_and_checkpoint_survive_restart(
     saved = stored(reopened, generation)[1]
     assert saved["Event_Number"] == row["Event_Number"]
     assert saved["Call_Received"] == row["Call_Received"]
-    assert saved["raw"] == row
-    assert saved["raw"]["unexpected_attribute"] == "kept"
+    assert saved["extra"] == {"unexpected_attribute": "kept"}
     reopened.close()
 
 
@@ -88,7 +87,7 @@ def test_changed_record_is_updated_in_place_with_a_new_version(
     assert result.version == 2
     row = stored(writer, generation)[1]
     assert row["Disposition_Description"] == "REPORT TAKEN"
-    assert row["raw"]["Disposition_Description"] == "REPORT TAKEN"
+    assert row["extra"] == {}
     assert (row["first_seen_at"], row["last_changed_at"]) == (first_seen, clock.now)
     assert (row["first_seen_version"], row["changed_version"]) == (1, 2)
     assert status(writer)["last_change_at"] == clock.now

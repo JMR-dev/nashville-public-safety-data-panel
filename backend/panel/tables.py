@@ -1,7 +1,7 @@
 """Source-preserving police call storage with separately kept local metadata.
 
 Upstream attribute names and types are stored exactly as published. Every attribute, including
-ones this schema does not know yet, also survives verbatim in ``raw``. Local bookkeeping uses
+attributes this schema does not cover survive verbatim in ``extra``. Local bookkeeping uses
 lower-case column names. Provenance, schema snapshots, ingestion timestamps, checkpoints, and
 source status are each kept in their own place.
 """
@@ -99,7 +99,7 @@ calls = Table(
     Column("generation", Integer, ForeignKey("source_generations.id"), primary_key=True),
     Column("OBJECTID", Integer, primary_key=True),
     *(Column(name, SQL_TYPES[SOURCE_FIELDS[name]]) for name in ATTRIBUTE_FIELDS),
-    Column("raw", JSON, nullable=False),
+    Column("extra", JSON, nullable=False),
     Column("fingerprint", String, nullable=False),
     Column("first_seen_at", Integer, nullable=False),
     Column("last_seen_at", Integer, nullable=False),

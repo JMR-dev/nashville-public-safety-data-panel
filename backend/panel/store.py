@@ -17,6 +17,7 @@ from sqlalchemy.dialects.sqlite import insert
 from panel.database import open_engine, upgrade
 from panel.tables import (
     ATTRIBUTE_FIELDS,
+    SOURCE_FIELDS,
     calls,
     checkpoints,
     generations,
@@ -301,7 +302,9 @@ class Writer:
                         **values,
                         "generation": generation,
                         "OBJECTID": oid,
-                        "raw": dict(row),
+                        "extra": {
+                            name: value for name, value in row.items() if name not in SOURCE_FIELDS
+                        },
                         "fingerprint": digest,
                         "first_seen_at": now,
                         "last_seen_at": now,
@@ -323,7 +326,7 @@ class Writer:
                             name: statement.excluded[name]
                             for name in (
                                 *ATTRIBUTE_FIELDS,
-                                "raw",
+                                "extra",
                                 "fingerprint",
                                 "last_seen_at",
                                 "last_changed_at",

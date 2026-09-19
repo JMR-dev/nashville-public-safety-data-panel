@@ -75,7 +75,7 @@ def upgrade() -> None:
         ),
         sa.Column("OBJECTID", sa.Integer(), primary_key=True),
         *(sa.Column(name, column_type) for name, column_type in UPSTREAM_COLUMNS),
-        sa.Column("raw", sa.JSON(), nullable=False),
+        sa.Column("extra", sa.JSON(), nullable=False),
         sa.Column("fingerprint", sa.String(), nullable=False),
         sa.Column("first_seen_at", sa.Integer(), nullable=False),
         sa.Column("last_seen_at", sa.Integer(), nullable=False),

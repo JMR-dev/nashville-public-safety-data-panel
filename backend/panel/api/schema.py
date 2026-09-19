@@ -184,9 +184,7 @@ def build_call(row: Mapping[str, Any]) -> Call:
         first_seen_at=utc(row["first_seen_at"]),
         last_seen_at=utc(row["last_seen_at"]),
         last_changed_at=utc(row["last_changed_at"]),
-        additional_attributes=JSON(
-            {name: value for name, value in row["raw"].items() if name not in SOURCE_FIELDS}
-        ),
+        additional_attributes=JSON(row["extra"]),
         record=MnpdCallRecord(**{name: row[name] for name in SOURCE_FIELDS}),
     )
 
