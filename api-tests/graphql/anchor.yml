@@ -1,0 +1,36 @@
+info:
+  name: Anchor
+  type: graphql
+  seq: 1
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Anchor {
+        dataVersion
+        serverTime
+      }
+    variables: |
+      {}
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.errors
+      operator: isUndefined
+    - expression: res.body.data.dataVersion
+      operator: eq
+      value: 2
+  scripts:
+    - type: tests
+      code: |
+        test("the server reports its own time, which the dashboard uses to build windows", function () {
+          const serverTime = Date.parse(res.body.data.serverTime);
+          expect(Number.isNaN(serverTime)).to.equal(false);
+          expect(Math.abs(Date.now() - serverTime)).to.be.below(5 * 60 * 1000);
+        });
+docs: |
+  The dashboard opens with this: the data version it pins every other query to, and the
+  server's clock, so a browser with a wrong clock still asks for the right hours.

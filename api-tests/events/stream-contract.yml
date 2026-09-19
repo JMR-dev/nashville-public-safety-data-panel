@@ -1,0 +1,41 @@
+info:
+  name: Event stream contract
+  type: http
+  seq: 1
+http:
+  url: "{{probeUrl}}/events-probe"
+  method: GET
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.status
+      operator: eq
+      value: 200
+    - expression: res.body.headers['content-type']
+      operator: contains
+      value: text/event-stream
+    - expression: res.body.headers['cache-control']
+      operator: eq
+      value: no-cache
+  scripts:
+    - type: tests
+      code: |
+        test("the first frame names the event and carries the data version as its id", function () {
+          const frame = res.body.firstEvent;
+          expect(frame).to.contain("event: version");
+          expect(frame).to.contain('data: {"version": 2}');
+          expect(frame).to.contain("id: 2");
+        });
+
+        test("the stream tells a disconnected browser how long to wait before reconnecting", function () {
+          expect(res.body.firstEvent).to.contain("retry: 3000");
+        });
+docs: |
+  /events never ends, and the Bruno CLI cannot read a response that never ends, so the fixture
+  harness opens the stream, reports the response it got, and closes it. Everything asserted
+  here is the API's own response: its status, its headers, and the first event it sent.
+
+  The event id is the data version. A browser that reconnects sends it back as Last-Event-ID
+  and is then told only about versions it has not seen, which pytest covers directly.

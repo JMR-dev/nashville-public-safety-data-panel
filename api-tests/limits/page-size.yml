@@ -1,0 +1,33 @@
+info:
+  name: Page larger than the maximum
+  type: graphql
+  seq: 1
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Feed($filter: CallFilter!) {
+        calls(filter: $filter, first: 500) {
+          nodes {
+            id
+          }
+        }
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}" }
+      }
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.data
+      operator: isNull
+    - expression: res.body.errors[0].message
+      operator: eq
+      value: first must be between 1 and 200
+docs: |
+  A request for more calls than a page may hold is refused with a message that says what the
+  limit is, rather than quietly returning a different number of calls.

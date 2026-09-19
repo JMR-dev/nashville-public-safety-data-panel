@@ -1,0 +1,21 @@
+info:
+  name: Readiness without a schema
+  type: http
+  seq: 3
+http:
+  url: "{{unreadyUrl}}/readyz"
+  method: GET
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 503
+    - expression: res.body.status
+      operator: eq
+      value: unavailable
+    - expression: res.body.reason
+      operator: contains
+      value: migrated
+docs: |
+  A second API serves a database the worker has never migrated. Readiness must fail with 503
+  rather than serve empty results that look like a quiet city.

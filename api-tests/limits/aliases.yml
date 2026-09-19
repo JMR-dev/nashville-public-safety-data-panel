@@ -1,0 +1,40 @@
+info:
+  name: More aliases than allowed
+  type: graphql
+  seq: 6
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Aliases($filter: CallFilter!) {
+        a: summary(filter: $filter) { total }
+        b: summary(filter: $filter) { total }
+        c: summary(filter: $filter) { total }
+        d: summary(filter: $filter) { total }
+        e: summary(filter: $filter) { total }
+        f: summary(filter: $filter) { total }
+        g: summary(filter: $filter) { total }
+        h: summary(filter: $filter) { total }
+        i: summary(filter: $filter) { total }
+        j: summary(filter: $filter) { total }
+        k: summary(filter: $filter) { total }
+        l: summary(filter: $filter) { total }
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}" }
+      }
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.data
+      operator: isNull
+    - expression: res.body.errors[0].message
+      operator: eq
+      value: "12 aliases found. Allowed: 10"
+docs: |
+  Aliases multiply the work one document can ask for, so they are capped too. Twelve copies of
+  the summary are refused before any of them runs.

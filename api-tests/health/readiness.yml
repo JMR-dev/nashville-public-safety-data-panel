@@ -1,0 +1,20 @@
+info:
+  name: Readiness
+  type: http
+  seq: 2
+http:
+  url: "{{baseUrl}}/readyz"
+  method: GET
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.status
+      operator: eq
+      value: ready
+    - expression: res.body.revision
+      operator: isNotEmpty
+docs: |
+  Readiness reports the migration revision the database is actually at, which is what tells a
+  deployment that the schema the API expects is present.

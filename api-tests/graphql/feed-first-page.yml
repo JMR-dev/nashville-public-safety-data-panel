@@ -1,0 +1,47 @@
+info:
+  name: Feed, first page
+  type: graphql
+  seq: 4
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Feed($filter: CallFilter!, $first: Int!, $asOfVersion: Int!) {
+        calls(filter: $filter, first: $first, asOfVersion: $asOfVersion) {
+          pageInfo {
+            endCursor
+            hasNextPage
+          }
+          nodes {
+            id
+          }
+        }
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}" },
+        "first": 2,
+        "asOfVersion": 2
+      }
+runtime:
+  assertions:
+    - expression: res.body.data.calls.nodes
+      operator: length
+      value: 2
+    - expression: res.body.data.calls.pageInfo.hasNextPage
+      operator: isTruthy
+    - expression: res.body.data.calls.pageInfo.endCursor
+      operator: isNotEmpty
+  actions:
+    - type: set-variable
+      phase: after-response
+      selector:
+        expression: res.body.data.calls.pageInfo.endCursor
+        method: jsonq
+      variable:
+        name: cursor
+        scope: runtime
+      description: The cursor the next request pages from.
+docs: |
+  A short page, so the next request can page from its cursor.

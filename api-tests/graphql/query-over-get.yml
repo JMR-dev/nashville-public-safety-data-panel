@@ -1,0 +1,18 @@
+info:
+  name: Query over GET
+  type: http
+  seq: 12
+http:
+  url: "{{baseUrl}}/graphql?query=%7BdataVersion%7D"
+  method: GET
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.data.dataVersion
+      operator: eq
+      value: 2
+docs: |
+  The API is read-only, so a query may be a GET. That makes ordinary HTTP caching and a plain
+  browser request work against it.

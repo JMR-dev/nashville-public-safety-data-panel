@@ -1,0 +1,46 @@
+info:
+  name: Feed, next page
+  type: graphql
+  seq: 5
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Feed($filter: CallFilter!, $first: Int!, $after: String, $asOfVersion: Int!) {
+        calls(filter: $filter, first: $first, after: $after, asOfVersion: $asOfVersion) {
+          pageInfo {
+            hasNextPage
+          }
+          nodes {
+            id
+            receivedAt
+          }
+        }
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}" },
+        "first": 2,
+        "after": "{{cursor}}",
+        "asOfVersion": 2
+      }
+runtime:
+  assertions:
+    - expression: res.body.errors
+      operator: isUndefined
+    - expression: res.body.data.calls.nodes
+      operator: length
+      value: 2
+    - expression: res.body.data.calls.pageInfo.hasNextPage
+      operator: isFalsy
+  scripts:
+    - type: tests
+      code: |
+        test("the second page continues the first instead of repeating it", function () {
+          const ids = res.body.data.calls.nodes.map((call) => call.id);
+          expect(ids).to.deep.equal(["1:2", "1:3"]);
+        });
+docs: |
+  Two calls share a received time in the fixture data, so this also checks that the cursor
+  breaks that tie rather than showing one of them twice.

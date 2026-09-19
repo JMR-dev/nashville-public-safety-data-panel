@@ -1,0 +1,103 @@
+info:
+  name: Call detail
+  type: graphql
+  seq: 11
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query CallDetail($id: ID!) {
+        call(id: $id) {
+          id
+          generation
+          receivedAt
+          hasCoordinates
+          sourcePresent
+          removedAt
+          firstSeenAt
+          lastChangedAt
+          additionalAttributes
+          record {
+            OBJECTID
+            Event_Number
+            Complaint_Number
+            Tencode
+            Tencode_Description
+            Tencode_Suffix
+            Tencode_Suffix_Description
+            Disposition_Code
+            Disposition_Description
+            Block
+            Street_Name
+            Unit_Dispatched
+            Shift
+            Sector
+            Mapped_Location
+            POINT_X
+            POINT_Y
+            ZONE_
+            Latitude
+            Longitude
+            RPA
+            Call_Received
+          }
+        }
+      }
+    variables: |
+      {
+        "id": "1:5"
+      }
+runtime:
+  assertions:
+    - expression: res.body.data.call.id
+      operator: eq
+      value: "1:5"
+    - expression: res.body.data.call.sourcePresent
+      operator: isTruthy
+    - expression: res.body.data.call.removedAt
+      operator: isNull
+    - expression: res.body.data.call.record.Call_Received
+      operator: eq
+      value: 1789815600000
+  scripts:
+    - type: tests
+      code: |
+        test("the whole published record comes back under the source's own field names", function () {
+          expect(Object.keys(res.body.data.call.record)).to.deep.equal([
+            "OBJECTID",
+            "Event_Number",
+            "Complaint_Number",
+            "Tencode",
+            "Tencode_Description",
+            "Tencode_Suffix",
+            "Tencode_Suffix_Description",
+            "Disposition_Code",
+            "Disposition_Description",
+            "Block",
+            "Street_Name",
+            "Unit_Dispatched",
+            "Shift",
+            "Sector",
+            "Mapped_Location",
+            "POINT_X",
+            "POINT_Y",
+            "ZONE_",
+            "Latitude",
+            "Longitude",
+            "RPA",
+            "Call_Received"
+          ]);
+        });
+
+        test("an attribute outside the known schema is kept rather than dropped", function () {
+          expect(res.body.data.call.additionalAttributes).to.deep.equal({ Priority: "HIGH" });
+        });
+
+        test("Call_Received stays the epoch milliseconds the source published", function () {
+          const record = res.body.data.call.record;
+          expect(record.Call_Received).to.equal(Date.parse(res.body.data.call.receivedAt));
+        });
+docs: |
+  One call, as published. The panel adds when it first saw the record and when it last changed,
+  and keeps any attribute the source adds that this schema does not know about.

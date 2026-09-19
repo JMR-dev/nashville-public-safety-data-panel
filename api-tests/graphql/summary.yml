@@ -1,0 +1,73 @@
+info:
+  name: Summary
+  type: graphql
+  seq: 8
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Summary($filter: CallFilter!, $types: Int!) {
+        summary(filter: $filter) {
+          total
+          withCoordinates
+          withoutCoordinates
+          types(limit: $types) {
+            otherCount
+            entries {
+              Tencode_Description
+              count
+            }
+          }
+          hourly {
+            start
+            count
+          }
+        }
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}" },
+        "types": 10
+      }
+runtime:
+  assertions:
+    - expression: res.body.data.summary.total
+      operator: eq
+      value: 4
+    - expression: res.body.data.summary.withCoordinates
+      operator: eq
+      value: 2
+    - expression: res.body.data.summary.withoutCoordinates
+      operator: eq
+      value: 2
+    - expression: res.body.data.summary.types.otherCount
+      operator: eq
+      value: 0
+  scripts:
+    - type: tests
+      code: |
+        test("located and unlocated calls add up to the total", function () {
+          const summary = res.body.data.summary;
+          expect(summary.withCoordinates + summary.withoutCoordinates).to.equal(summary.total);
+        });
+
+        test("types are ranked by how many calls carry them", function () {
+          const counts = res.body.data.summary.types.entries.map((entry) => entry.count);
+          expect(counts).to.deep.equal([...counts].sort((a, b) => b - a));
+          expect(res.body.data.summary.types.entries[0]).to.deep.equal({
+            Tencode_Description: "ALARM - BURGLAR",
+            count: 2
+          });
+        });
+
+        test("hourly buckets are ordered and cover only hours with calls", function () {
+          const hourly = res.body.data.summary.hourly;
+          const starts = hourly.map((hour) => Date.parse(hour.start));
+          expect(starts).to.deep.equal([...starts].sort((a, b) => a - b));
+          const counted = hourly.reduce((sum, hour) => sum + hour.count, 0);
+          expect(counted).to.equal(res.body.data.summary.total);
+        });
+docs: |
+  The figures above the feed. They count published call records, which is not the same as
+  confirmed incidents, and the dashboard says so beside them.
