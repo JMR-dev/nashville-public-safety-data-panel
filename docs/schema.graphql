@@ -1,0 +1,192 @@
+type BackfillProgress {
+  """Highest OBJECTID captured for the backfill."""
+  boundary: Int!
+  rangesTotal: Int!
+  rangesCompleted: Int!
+  fraction: Float!
+  completedAt: DateTime
+}
+
+"""A retained call record with derived and local metadata."""
+type Call {
+  """Source generation and OBJECTID."""
+  id: ID!
+  generation: Int!
+
+  """Call_Received in UTC."""
+  receivedAt: DateTime
+
+  """Whether the source published a usable approximate location."""
+  hasCoordinates: Boolean!
+
+  """Whether the record was in the source at its last reconciliation."""
+  sourcePresent: Boolean!
+  removedAt: DateTime
+  firstSeenAt: DateTime!
+  lastSeenAt: DateTime!
+  lastChangedAt: DateTime!
+
+  """Published attributes that are not part of the known schema."""
+  additionalAttributes: JSON!
+  record: MnpdCallRecord!
+}
+
+"""Calls received in [since, until), narrowed by upstream values."""
+input CallFilter {
+  since: DateTime!
+  until: DateTime!
+  ZONE_: [String!]! = []
+  Sector: [String!]! = []
+  Tencode_Description: [String!]! = []
+  Disposition_Description: [String!]! = []
+
+  """Include records that are no longer in the source."""
+  includeRemoved: Boolean! = false
+}
+
+"""One page of the newest-first feed, pinned to a data version."""
+type CallPage {
+  nodes: [Call!]!
+  pageInfo: PageInfo!
+  asOfVersion: Int!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+"""Milliseconds since 1970-01-01T00:00:00Z, as published."""
+scalar EpochMilliseconds
+
+type FilterValues {
+  ZONE_: [String!]!
+  Sector: [String!]!
+  Tencode_Description: [String!]!
+  Disposition_Description: [String!]!
+}
+
+type HourCount {
+  start: DateTime!
+  count: Int!
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
+"""
+scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
+
+"""Map markers are bounded; counts cover every matching call."""
+type MapCalls {
+  calls: [Call!]!
+  matching: Int!
+  withCoordinates: Int!
+  truncated: Boolean!
+}
+
+"""A published call record with its upstream field names and types."""
+type MnpdCallRecord {
+  OBJECTID: Int!
+  Event_Number: String
+  Complaint_Number: Float
+  Tencode: Int
+  Tencode_Description: String
+  Tencode_Suffix: String
+  Tencode_Suffix_Description: String
+  Disposition_Code: String
+  Disposition_Description: String
+  Block: String
+  Street_Name: String
+  Unit_Dispatched: String
+  Shift: String
+  Sector: String
+  Mapped_Location: String
+  POINT_X: Float
+  POINT_Y: Float
+  ZONE_: String
+  Latitude: Float
+  Longitude: Float
+  RPA: String
+  Call_Received: EpochMilliseconds
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+}
+
+type Query {
+  """Newest-first calls. Omit asOfVersion to pin the current one."""
+  calls(filter: CallFilter!, first: Int! = 50, after: String = null, asOfVersion: Int = null): CallPage!
+
+  """Matching calls first seen after a data version."""
+  newCallCount(filter: CallFilter!, sinceVersion: Int!): Int!
+  call(id: ID!): Call
+
+  """Newest matching calls with usable coordinates."""
+  mapCalls(filter: CallFilter!, limit: Int! = 2000): MapCalls!
+  summary(filter: CallFilter!): Summary!
+  filterValues(since: DateTime!, until: DateTime!): FilterValues!
+  sourceStatus: [SourceStatus!]!
+
+  """Increases whenever committed call data changes."""
+  dataVersion: Int!
+  serverTime: DateTime!
+}
+
+"""Where the retained data came from."""
+type SourceGeneration {
+  id: Int!
+  url: String!
+  serviceItemId: String
+  layerName: String
+  reason: String!
+  createdAt: DateTime!
+  active: Boolean!
+}
+
+enum SourceState {
+  STARTING
+  BACKFILLING
+  LIVE
+  DEGRADED
+  SCHEMA_INCOMPATIBLE
+}
+
+"""
+Ingestion health. A successful poll does not mean the source published new records; compare lastPollAt, lastChangeAt, latestCallReceivedAt, and upstreamEditedAt.
+"""
+type SourceStatus {
+  source: String!
+  state: SourceState!
+  detail: String
+  lastPollAt: DateTime
+  lastChangeAt: DateTime
+  latestCallReceivedAt: DateTime
+  upstreamEditedAt: DateTime
+  degradedSince: DateTime
+  retryAt: DateTime
+  windowReconciledAt: DateTime
+  fullReconciledAt: DateTime
+  generation: SourceGeneration
+  backfill: BackfillProgress
+}
+
+"""Counts of published source records, not confirmed incidents."""
+type Summary {
+  total: Int!
+  withCoordinates: Int!
+  withoutCoordinates: Int!
+  types(limit: Int! = 10): TypeBreakdown!
+  hourly: [HourCount!]!
+}
+
+type TypeBreakdown {
+  entries: [TypeCount!]!
+
+  """Calls whose type is not listed."""
+  otherCount: Int!
+}
+
+type TypeCount {
+  Tencode_Description: String
+  count: Int!
+}
