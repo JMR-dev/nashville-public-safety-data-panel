@@ -1,7 +1,7 @@
 """The container images and the Quadlet units that run them.
 
 These scenarios build the images and start them, so they are slower than the rest of the suite
-and are selected with ``-m containers`` rather than run by default.
+and are selected with ``-m deployment`` rather than run by default.
 """
 
 import json
