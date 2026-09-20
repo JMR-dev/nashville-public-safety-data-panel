@@ -54,6 +54,14 @@ beforeEach(() => {
   FakeVersionSource.reset();
 });
 
+/**
+ * A promise the test answers when it chooses, for holding a request open.
+ */
+function deferred(): { held: Promise<void>; answer: () => void } {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  return { held: promise, answer: resolve };
+}
+
 function feedRows(): HTMLElement[] {
   return within(screen.getByRole("list", { name: "Calls, newest first" })).queryAllByRole("button");
 }
@@ -186,6 +194,39 @@ describe("Monitor", () => {
       await screen.findByText(/History is still loading, so older calls may appear later/),
     ).toBeVisible();
     expect(screen.queryByText(/newest call the source has published/)).not.toBeInTheDocument();
+  });
+
+  test("waits for the server's clock before deciding which hours to ask for", async () => {
+    // A slow anchor and a prompt notification: the dashboard must not fall back to the
+    // browser's clock, which may be wrong, to work out what the last 24 hours are.
+    const backend = fakeBackend();
+    const { api } = backend;
+    const { held, answer } = deferred();
+    api.on("Anchor", async () => {
+      await held;
+      return { dataVersion: backend.version, serverTime: iso(T0) };
+    });
+
+    renderWithClient(<Monitor openEvents={openFakeSource} />);
+    await waitFor(() => {
+      expect(FakeVersionSource.latest()).toBeDefined();
+    });
+    act(() => {
+      FakeVersionSource.latest().version(9);
+    });
+    answer();
+
+    await waitFor(() => {
+      expect(feedRows()).toHaveLength(2);
+    });
+    await waitFor(() => {
+      expect(api.calls("Summary")).not.toHaveLength(0);
+    });
+    const feed = api.calls("Feed").at(-1) as { filter: CallFilter };
+    const summary = api.calls("Summary").at(-1) as { filter: CallFilter };
+    // Every panel asks about the same hours, and those hours come from the server's clock.
+    expect(summary.filter).toEqual(feed.filter);
+    expect(Date.parse(summary.filter.until)).toBe(T0 + 5 * 60_000);
   });
 
   test("ignores a notification for the version already shown", async () => {

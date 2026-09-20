@@ -174,7 +174,12 @@ export function Monitor({ openEvents }: { openEvents: OpenVersionSource }) {
   const liveTime = liveAt ?? serverTime;
 
   function refresh(): void {
-    setLiveAt(Date.now() + offset);
+    // Until the anchor answers there is no server clock to place "now" against, and the
+    // browser's own may be wrong, which is the reason the anchor exists. A notification that
+    // arrives first still refreshes the queries; they ask for the right hours once it lands.
+    if (anchor.data) {
+      setLiveAt(Date.now() + offset);
+    }
     const keys = isPaused ? ["newCalls", "status"] : [...LIVE_KEYS, "call"];
     for (const key of keys) {
       void client.invalidateQueries({ queryKey: [key] });
