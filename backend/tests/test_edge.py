@@ -308,82 +308,10 @@ def test_the_ban_is_the_one_the_deployment_documents() -> None:
 
 
 # The host firewall
-
-
-def loaded_ruleset() -> str:
-    """Load the committed ruleset into a network namespace of its own and read it back."""
-    ruleset = NFTABLES / "panel.nft"
-    management = NFTABLES / "panel-management.example.nft"
-    prepared = ruleset.read_text().replace(
-        'include "/etc/nftables/panel-management.nft"', f'include "{management}"'
-    )
-    loading = subprocess.run(
-        ["unshare", "--user", "--map-root-user", "--net", "nft", "--file", "/dev/stdin"],
-        input=prepared,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert loading.returncode == 0, loading.stderr
-    listing = subprocess.run(
-        [
-            "unshare",
-            "--user",
-            "--map-root-user",
-            "--net",
-            "sh",
-            "-c",
-            "nft -f /dev/stdin && nft list ruleset",
-        ],
-        input=prepared,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert listing.returncode == 0, listing.stderr
-    return listing.stdout
-
-
-@pytest.fixture(scope="module")
-def ruleset() -> str:
-    return loaded_ruleset()
-
-
-def test_the_host_refuses_what_it_was_not_asked_to_serve(ruleset: str) -> None:
-    assert "type filter hook input priority filter; policy drop;" in ruleset
-    assert "type filter hook forward priority filter; policy drop;" in ruleset
-    assert "ct state established,related accept" in ruleset
-    assert "ct state invalid drop" in ruleset
-
-
-def test_the_host_serves_the_web_and_nothing_else_publicly(ruleset: str) -> None:
-    assert "tcp dport { 80, 443 } accept" in ruleset
-    # The application ports are on the loopback address, so they are never a rule here.
-    for port in ("8001", "8080"):
-        assert f"dport {port}" not in ruleset
-
-
-def test_administration_is_accepted_only_from_known_addresses(ruleset: str) -> None:
-    assert "ip saddr @management tcp dport 22 accept" in ruleset
-    assert "ip6 saddr @management6 tcp dport 22 accept" in ruleset
-    assert "203.0.113.0/24" in ruleset
-    assert "2001:db8::/32" in ruleset
-    # Every rule that opens ssh names an address set: none of them opens it to everyone.
-    ssh = [line.strip() for line in ruleset.splitlines() if "dport 22" in line]
-    assert ssh
-    assert all("@management" in rule for rule in ssh)
-
-
-def test_the_worker_can_still_reach_the_source_it_ingests(ruleset: str) -> None:
-    assert 'iifname "podman*" accept' in ruleset
-
-
-def test_diagnostics_and_path_discovery_keep_working(ruleset: str) -> None:
-    for kind in ("echo-request", "destination-unreachable", "time-exceeded"):
-        assert kind in ruleset
-    assert "packet-too-big" in ruleset
+#
+# The ruleset is loaded for real, on the platform it is written for, by the guest scenarios in
+# test_guest.py: loading it needs privileges that a test runner does not necessarily have, and
+# a host that merely parses it has not proved anything.
 
 
 def test_the_committed_ruleset_expects_its_addresses_from_the_deployment() -> None:

@@ -27,6 +27,48 @@
     mode: "0644"
   notify: Reload systemd
 
+- name: Make a place for what this deployment adds to the proxy
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: caddy
+    mode: "0750"
+  loop:
+    - /etc/caddy/conf.d
+    - /etc/caddy/acme
+
+- name: Give the proxy the credentials it proves this deployment's name with
+  ansible.builtin.copy:
+    src: "{{ panel_acme_credentials }}"
+    dest: /etc/caddy/acme/dns-credentials.json
+    owner: root
+    group: caddy
+    mode: "0640"
+  when: panel_acme_credentials | length > 0
+  notify: Restart the proxy
+
+- name: Ask for a certificate through a DNS challenge
+  ansible.builtin.template:
+    src: tls.caddy.j2
+    dest: /etc/caddy/conf.d/tls.caddy
+    owner: root
+    group: caddy
+    mode: "0640"
+  when: panel_acme_credentials | length > 0
+  notify: Restart the proxy
+
+# Taking the setting away takes the configuration away: the proxy goes back to issuing its own.
+- name: Leave certificates to the proxy when no challenge is configured
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/caddy/conf.d/tls.caddy
+    - /etc/caddy/acme/dns-credentials.json
+  when: panel_acme_credentials | length == 0
+  notify: Restart the proxy
+
 - name: Make a place for each unit's deployment settings
   ansible.builtin.file:
     path: "/etc/systemd/system/{{ item }}.service.d"
@@ -46,6 +88,7 @@
       Environment=PANEL_API_UPSTREAM={{ panel_api_upstream }}
       Environment=PANEL_DASHBOARD_UPSTREAM={{ panel_dashboard_upstream }}
       Environment=PANEL_BACKUP_KEEP={{ panel_backup_keep }}
+      Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/caddy/acme/dns-credentials.json
     dest: "/etc/systemd/system/{{ item }}.service.d/deployment.conf"
     owner: root
     group: root

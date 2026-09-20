@@ -33,3 +33,12 @@ panel_units:
   - panel-dashboard.container
   - panel-caddy.container
   - panel-backup.container
+
+# Certificates. Without any of these, Caddy issues its own, which is what a deployment behind
+# something else, or one being tried out, wants. With them, it proves the name through Google
+# Cloud DNS: the credentials stay on the machine running Ansible and never enter this
+# repository.
+panel_acme_email: ""
+panel_acme_gcp_project: ""
+# A path on the machine running Ansible, outside this repository.
+panel_acme_credentials: ""

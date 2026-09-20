@@ -1,0 +1,7 @@
+# Managed by Ansible. This deployment proves its name through Google Cloud DNS, so it needs no
+# inbound challenge and can hold a certificate for a name that does not resolve publicly yet.
+tls {{ panel_acme_email }} {
+	dns googleclouddns {
+		gcp_project {{ panel_acme_gcp_project }}
+	}
+}

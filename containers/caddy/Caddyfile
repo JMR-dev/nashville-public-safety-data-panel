@@ -39,6 +39,10 @@
 	import waf
 	import hardened
 
+	# What a deployment adds for itself: a certificate obtained through a DNS challenge, for
+	# example. Without any of it, Caddy issues its own certificate for the name it serves.
+	import /etc/caddy/conf.d/*.caddy
+
 	# The API is read-only, so a query may arrive as a GET or a POST.
 	handle /graphql* {
 		reverse_proxy {$PANEL_API_UPSTREAM:127.0.0.1:8001}

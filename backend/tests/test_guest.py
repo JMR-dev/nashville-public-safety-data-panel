@@ -125,19 +125,29 @@ def play(inventory: Path) -> Recap:
     return Recap(ok=ok, changed=changed, failed=failed, unreachable=unreachable)
 
 
-@pytest.fixture(scope="module")
-def configured(guest: str, tmp_path_factory: pytest.TempPathFactory) -> tuple[Recap, Recap]:
-    """The playbook run twice: configuring the host, then finding nothing left to do."""
-    inventory = tmp_path_factory.mktemp("inventory") / "guest.ini"
-    inventory.write_text(
+def describe(guest: str, **settings: str) -> str:
+    lines = "".join(f"{name}={value}\n" for name, value in settings.items())
+    return (
         f"[panel]\n{guest} ansible_connection=podman ansible_become=false\n\n"
         "[panel:vars]\n"
         f"panel_site_address={SITE}\n"
         f"panel_management_v4={{ {MANAGEMENT_V4} }}\n"
         f"panel_management_v6={{ {MANAGEMENT_V6} }}\n"
         # The images are built elsewhere, so this host is configured but not started.
-        "panel_start_services=false\n"
+        "panel_start_services=false\n" + lines
     )
+
+
+@pytest.fixture(scope="module")
+def inventory(guest: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    path = tmp_path_factory.mktemp("inventory") / "guest.ini"
+    path.write_text(describe(guest))
+    return path
+
+
+@pytest.fixture(scope="module")
+def configured(inventory: Path) -> tuple[Recap, Recap]:
+    """The playbook run twice: configuring the host, then finding nothing left to do."""
     return play(inventory), play(inventory)
 
 
@@ -174,6 +184,41 @@ def test_the_host_loads_the_ruleset_this_repository_ships(
     assert MANAGEMENT_V4 in ruleset
     assert MANAGEMENT_V6 in ruleset
     assert "203.0.113.0/24" not in ruleset
+
+
+def test_the_host_refuses_what_it_was_not_asked_to_serve(configured: tuple[Recap, Recap]) -> None:
+    ruleset = inside("nft", "list", "ruleset")
+    assert "type filter hook forward priority filter; policy drop;" in ruleset
+    assert "ct state established,related accept" in ruleset
+    assert "ct state invalid drop" in ruleset
+    # The application ports are on the loopback address, so they are never a rule here.
+    for port in ("8001", "8080"):
+        assert f"dport {port}" not in ruleset
+
+
+def test_administration_is_accepted_only_from_known_addresses(
+    configured: tuple[Recap, Recap],
+) -> None:
+    ruleset = inside("nft", "list", "ruleset")
+    assert "ip saddr @management tcp dport 22 accept" in ruleset
+    assert "ip6 saddr @management6 tcp dport 22 accept" in ruleset
+    # Every rule that opens ssh names an address set: none of them opens it to everyone.
+    ssh = [line.strip() for line in ruleset.splitlines() if "dport 22" in line]
+    assert ssh
+    assert all("@management" in rule for rule in ssh)
+
+
+def test_the_worker_can_still_reach_the_source_it_ingests(
+    configured: tuple[Recap, Recap],
+) -> None:
+    assert 'iifname "podman*" accept' in inside("nft", "list", "ruleset")
+
+
+def test_diagnostics_and_path_discovery_keep_working(configured: tuple[Recap, Recap]) -> None:
+    ruleset = inside("nft", "list", "ruleset")
+    for kind in ("echo-request", "destination-unreachable", "time-exceeded"):
+        assert kind in ruleset
+    assert "packet-too-big" in ruleset
 
 
 def test_the_firewall_survives_a_restart_of_its_service(configured: tuple[Recap, Recap]) -> None:
@@ -252,3 +297,70 @@ def test_the_host_keeps_no_secrets_from_this_repository() -> None:
         assert "BEGIN PRIVATE KEY" not in text
     playbook = json.dumps(list((ANSIBLE / "roles").rglob("*.yml")), default=str)
     assert "secret" not in playbook.lower()
+
+
+# Certificates
+
+
+def test_a_deployment_asks_for_no_certificate_by_itself(configured: tuple[Recap, Recap]) -> None:
+    """Without a challenge configured, the proxy issues its own certificate."""
+    assert inside("ls", "/etc/caddy/conf.d").split() == []
+
+
+def test_a_deployment_can_prove_its_name_through_a_dns_challenge(
+    guest: str,
+    configured: tuple[Recap, Recap],
+    inventory: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The credentials stay with whoever runs Ansible; the host gets a file only the proxy reads."""
+    credentials = tmp_path_factory.mktemp("acme") / "dns-credentials.json"
+    credentials.write_text(json.dumps({"type": "service_account", "project_id": "panel-example"}))
+    with_challenge = inventory.parent / "guest-acme.ini"
+    with_challenge.write_text(
+        describe(
+            guest,
+            panel_acme_email="operations@example.org",
+            panel_acme_gcp_project="panel-example",
+            panel_acme_credentials=str(credentials),
+        )
+    )
+
+    recap = play(with_challenge)
+    assert (recap.failed, recap.unreachable) == (0, 0)
+    assert recap.changed > 0
+
+    written = inside("cat", "/etc/caddy/conf.d/tls.caddy")
+    assert "dns googleclouddns" in written
+    assert "gcp_project panel-example" in written
+    assert "tls operations@example.org" in written
+    # The credentials are readable by the proxy and by nobody else.
+    assert inside("stat", "--format=%u %g %a", "/etc/caddy/acme/dns-credentials.json").strip() == (
+        "0 10003 640"
+    )
+
+    # What the proxy would load has to be something the proxy accepts.
+    staged = tmp_path_factory.mktemp("conf.d")
+    podman("cp", f"{GUEST}:/etc/caddy/conf.d/tls.caddy", str(staged / "tls.caddy"))
+    validation = podman(
+        "run",
+        "--rm",
+        "--volume",
+        f"{staged}:/etc/caddy/conf.d:ro,z",
+        "--env",
+        f"PANEL_SITE_ADDRESS={SITE}",
+        "localhost/panel-caddy:test",
+        "validate",
+        "--config",
+        "/etc/caddy/Caddyfile",
+    )
+    assert "Valid configuration" in validation
+
+
+def test_taking_the_challenge_away_gives_certificates_back_to_the_proxy(
+    configured: tuple[Recap, Recap], inventory: Path
+) -> None:
+    recap = play(inventory)
+    assert recap.failed == 0
+    assert inside("ls", "/etc/caddy/conf.d").split() == []
+    assert inside("ls", "/etc/caddy/acme").split() == []

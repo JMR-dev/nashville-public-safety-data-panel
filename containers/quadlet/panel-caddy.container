@@ -18,6 +18,10 @@ Tmpfs=/tmp
 # Certificates have to outlive the container; the audit log is read by fail2ban on the host.
 Volume=panel-certificates.volume:/var/lib/caddy:z
 Volume=/var/log/caddy:/var/log/caddy:z
+# What this deployment adds for itself, and the credentials it proves its name with. Both are
+# the host's to write and the proxy's only to read.
+Volume=/etc/caddy/conf.d:/etc/caddy/conf.d:ro,z
+Volume=/etc/caddy/acme:/etc/caddy/acme:ro,z
 Environment=PANEL_SITE_ADDRESS=localhost
 Environment=PANEL_API_UPSTREAM=127.0.0.1:8001
 Environment=PANEL_DASHBOARD_UPSTREAM=127.0.0.1:8080

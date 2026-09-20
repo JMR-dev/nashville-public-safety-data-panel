@@ -36,7 +36,7 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \
     && rm --recursive --force /var/lib/apt/lists/* \
     && useradd --uid 10003 --user-group --no-create-home --shell /usr/sbin/nologin caddy \
-    && mkdir --parents /var/log/caddy /var/lib/caddy /config \
+    && mkdir --parents /var/log/caddy /var/lib/caddy /config /etc/caddy/conf.d /etc/caddy/acme \
     && chown caddy:caddy /var/log/caddy /var/lib/caddy /config
 
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
