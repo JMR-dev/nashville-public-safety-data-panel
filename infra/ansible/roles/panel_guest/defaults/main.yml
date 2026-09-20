@@ -1,0 +1,13 @@
+---
+# Administration is accepted from these addresses and no others.
+panel_management_v4: "{ 203.0.113.0/24 }"
+panel_management_v6: "{ 2001:db8::/32 }"
+panel_packages:
+  - podman
+  - nftables
+  - fail2ban
+  - fail2ban-server
+  - logrotate
+  - policycoreutils-python-utils
+# Where this repository's infrastructure files are read from.
+panel_infra: "{{ playbook_dir }}/.."

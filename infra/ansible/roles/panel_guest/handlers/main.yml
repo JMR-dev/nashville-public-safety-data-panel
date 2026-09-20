@@ -1,0 +1,15 @@
+---
+- name: Reload the firewall
+  ansible.builtin.systemd_service:
+    name: nftables
+    state: reloaded
+
+- name: Restart the ban service
+  ansible.builtin.systemd_service:
+    name: fail2ban
+    state: restarted
+
+- name: Apply the log directory's label
+  ansible.builtin.command:
+    cmd: restorecon -R /var/log/caddy
+  changed_when: true

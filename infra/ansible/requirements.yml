@@ -1,0 +1,8 @@
+# Pinned: a collection that changes under a deployment is a deployment that changed itself.
+collections:
+  - name: ansible.posix
+    version: 2.2.0
+  - name: community.general
+    version: 12.6.2
+  - name: containers.podman
+    version: 1.20.2

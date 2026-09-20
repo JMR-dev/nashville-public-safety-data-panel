@@ -1,0 +1,7 @@
+# The guest this panel runs on: a host that serves the dashboard and nothing else.
+- name: Configure the panel's host
+  hosts: panel
+  become: true
+  roles:
+    - role: panel_guest
+    - role: panel_services

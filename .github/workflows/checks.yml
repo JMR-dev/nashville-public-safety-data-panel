@@ -61,6 +61,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes podman nftables fail2ban
       - run: uv sync --frozen
+      - name: Install the pinned Ansible collections
+        run: uv run ansible-galaxy collection install --requirements-file infra/ansible/requirements.yml
       # These scenarios run the application in containers, so they collect no in-process
       # coverage; the Python coverage gate is the backend job's.
       - run: uv run pytest -m deployment --no-cov

@@ -1,0 +1,35 @@
+---
+# The images the units run. A deployment that builds them elsewhere points these at its own
+# registry; the tags here are the ones the repository's Containerfiles produce.
+panel_backend_image: localhost/panel-backend:latest
+panel_dashboard_image: localhost/panel-dashboard:latest
+panel_caddy_image: localhost/panel-caddy:latest
+# The name the panel is served under, and the address the API and dashboard are reached at
+# from the proxy, which shares the host's network.
+panel_site_address: localhost
+panel_api_upstream: 127.0.0.1:8001
+panel_dashboard_upstream: 127.0.0.1:8080
+panel_backup_keep: 7
+panel_infra: "{{ playbook_dir }}/.."
+panel_quadlets: "{{ playbook_dir }}/../../containers/quadlet"
+# Services that read deployment-specific settings from a drop-in.
+panel_configured_units:
+  - panel-caddy
+  - panel-backup
+# The services this host runs, in the order they are started.
+panel_services:
+  - panel-worker.service
+  - panel-api.service
+  - panel-dashboard.service
+  - panel-caddy.service
+# A host can be configured before its images exist: set this false to install the units and
+# leave starting them until the images are on the host.
+panel_start_services: true
+panel_units:
+  - panel-data.volume
+  - panel-certificates.volume
+  - panel-worker.container
+  - panel-api.container
+  - panel-dashboard.container
+  - panel-caddy.container
+  - panel-backup.container

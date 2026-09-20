@@ -62,6 +62,16 @@ def test_the_checks_run_on_every_push_and_on_pull_requests(workflow: dict[Any, A
     assert workflow[True]["push"]["branches"] == ["**"]
 
 
+def test_the_ansible_collections_are_installed_from_their_pinned_list(
+    workflow: dict[Any, Any],
+) -> None:
+    """The guest scenarios run the real playbook, which needs the collections it imports."""
+    assert any(
+        "ansible-galaxy collection install" in command and "requirements.yml" in command
+        for command in commands(workflow)
+    )
+
+
 def test_dependencies_come_from_the_committed_lockfiles(workflow: dict[Any, Any]) -> None:
     """An unfrozen install would test versions nobody committed."""
     for command in commands(workflow):
