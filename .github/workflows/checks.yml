@@ -49,19 +49,21 @@ jobs:
       - run: pnpm --filter frontend test
 
   containers:
-    name: Container images and Quadlets
+    name: Deployment scenarios
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
-      - name: Make sure podman is available
-        run: command -v podman || (sudo apt-get update && sudo apt-get install --yes podman)
+      - name: Make sure the deployment tools are available
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes podman nftables fail2ban
       - run: uv sync --frozen
       # These scenarios run the application in containers, so they collect no in-process
       # coverage; the Python coverage gate is the backend job's.
-      - run: uv run pytest -m containers --no-cov
+      - run: uv run pytest -m deployment --no-cov
 
   integration:
     name: API collections and end-to-end flows

@@ -1,0 +1,4 @@
+# The addresses administration is accepted from, as the Ansible role writes them. The ranges
+# here are the documentation ranges from RFC 5737 and RFC 3849: a deployment replaces them.
+define management_v4 = { 203.0.113.0/24 }
+define management_v6 = { 2001:db8::/32 }

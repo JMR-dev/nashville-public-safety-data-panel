@@ -8,121 +8,31 @@ import json
 import re
 import shutil
 import subprocess
-import time
-from collections.abc import Generator, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
 
 import httpx
 import pytest
 
-pytestmark = pytest.mark.containers
-
-ROOT = Path(__file__).parents[2]
-CONTAINERS = ROOT / "containers"
-QUADLETS = CONTAINERS / "quadlet"
-BACKEND_IMAGE = "localhost/panel-backend:test"
-PANEL_USER = "10001:10001"
-DASHBOARD_USER = "10002:10002"
-DASHBOARD_IMAGE = "localhost/panel-dashboard:test"
-# What the Quadlet units give their containers, so the images are exercised the way they run.
-HARDENING = (
-    "--read-only",
-    "--tmpfs",
-    "/tmp",
-    "--cap-drop",
-    "all",
-    "--security-opt",
-    "no-new-privileges",
-)
-GENERATORS = (
-    Path("/usr/libexec/podman/quadlet"),
-    Path("/usr/lib/podman/quadlet"),
-    Path("/usr/lib/systemd/system-generators/podman-system-generator"),
+from tests.container_support import (
+    CONTAINERS,
+    DASHBOARD_USER,
+    GENERATORS,
+    PANEL_USER,
+    QUADLETS,
+    ROOT,
+    backend_image,
+    dashboard_image,
+    podman,
+    serve,
+    volume,
+    wait_for,
 )
 
+pytestmark = pytest.mark.deployment
 
-def podman(*arguments: str, timeout: float = 1800) -> str:
-    """Run podman, failing the test with its output if it fails."""
-    finished = subprocess.run(
-        ["podman", *arguments], capture_output=True, text=True, timeout=timeout, check=False
-    )
-    assert finished.returncode == 0, f"podman {' '.join(arguments)} failed:\n{finished.stderr}"
-    return finished.stdout
-
-
-def build(containerfile: str, image: str) -> str:
-    podman("build", "--file", str(CONTAINERS / containerfile), "--tag", image, str(ROOT))
-    return image
-
-
-@pytest.fixture(scope="module")
-def backend_image() -> str:
-    return build("backend.Containerfile", BACKEND_IMAGE)
-
-
-@pytest.fixture(scope="module")
-def dashboard_image() -> str:
-    return build("dashboard.Containerfile", DASHBOARD_IMAGE)
-
-
-@pytest.fixture
-def volume() -> Iterator[str]:
-    name = f"panel-test-{time.monotonic_ns()}"
-    podman("volume", "create", name)
-    yield name
-    podman("volume", "rm", "--force", name)
-
-
-class Service(NamedTuple):
-    name: str
-    url: str
-
-
-@contextmanager
-def serve(
-    image: str,
-    port: int,
-    *arguments: str,
-    user: str,
-    mount: str | None = None,
-    listens_on: int | None = None,
-    options: Sequence[str] = (),
-) -> Generator[Service]:
-    """Run a container under the restrictions its Quadlet imposes, while the test uses it."""
-    name = f"panel-test-{time.monotonic_ns()}"
-    volume = [] if mount is None else ["--volume", f"{mount}:/var/lib/panel:z"]
-    podman(
-        "run",
-        "--detach",
-        "--name",
-        name,
-        "--user",
-        user,
-        *HARDENING,
-        *options,
-        "--publish",
-        f"127.0.0.1:{port}:{listens_on or port}",
-        *volume,
-        image,
-        *arguments,
-    )
-    try:
-        yield Service(name, f"http://127.0.0.1:{port}")
-    finally:
-        podman("rm", "--force", "--time", "5", name)
-
-
-def wait_for(url: str) -> httpx.Response:
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        try:
-            return httpx.get(url, timeout=2)
-        except httpx.HTTPError:
-            time.sleep(0.1)
-    raise TimeoutError(f"{url} never answered")
-
+__all__ = ["backend_image", "dashboard_image", "volume"]
 
 # Images
 
@@ -311,6 +221,7 @@ def test_the_application_ports_are_published_on_the_loopback_address_only(
         ("panel-worker.service", "10001:10001"),
         ("panel-backup.service", "10001:10001"),
         ("panel-dashboard.service", "10002:10002"),
+        ("panel-caddy.service", "10003:10003"),
     ],
 )
 def test_containers_run_as_the_unprivileged_user_their_image_creates(
@@ -321,6 +232,30 @@ def test_containers_run_as_the_unprivileged_user_their_image_creates(
     assert "--security-opt no-new-privileges" in command
     assert "--cap-drop all" in command
     assert "--read-only" in command
+
+
+def test_the_proxy_is_the_only_container_on_the_host_network(units: dict[str, str]) -> None:
+    """Caddy sees the client's own address, which is what the ban list is written from."""
+    edge = start_command(units["panel-caddy.service"])
+    assert "--network host" in edge
+    assert "--user 10003:10003" in edge
+    assert "--read-only" in edge
+    assert "--cap-drop all" in edge
+    # Ports 80 and 443 are privileged, and that is the only privilege it gets.
+    assert "--cap-add net_bind_service" in edge.lower()
+    for service in ("panel-api.service", "panel-dashboard.service", "panel-worker.service"):
+        assert "--network host" not in start_command(units[service])
+        assert "cap-add" not in start_command(units[service])
+
+
+def test_the_certificates_outlive_the_proxy_and_stay_out_of_the_database(
+    units: dict[str, str],
+) -> None:
+    edge = start_command(units["panel-caddy.service"])
+    assert "-v panel-certificates:/var/lib/caddy:z" in edge
+    assert "panel-data" not in edge
+    # fail2ban reads the firewall's audit log from the host, so that one is a host path.
+    assert "-v /var/log/caddy:/var/log/caddy:z" in edge
 
 
 def test_the_worker_and_the_api_share_one_database_volume(units: dict[str, str]) -> None:

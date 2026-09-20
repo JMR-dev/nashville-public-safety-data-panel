@@ -1,0 +1,63 @@
+# The public edge. Everything a browser asks for arrives here: the dashboard, the GraphQL API,
+# and the event stream. The applications themselves listen only on the loopback address.
+{
+	admin off
+	# The firewall inspects a request before anything else looks at it.
+	order coraza_waf first
+	# No forwarding header is trusted: Caddy has the host's network, so the address it sees is
+	# the client's own, and anything a client sends about itself is just a claim.
+}
+
+(waf) {
+	coraza_waf {
+		directives `
+			Include /etc/caddy/coraza/coraza.conf
+			Include /etc/caddy/coraza/crs-setup.conf
+			Include /etc/caddy/coraza/rules/*.conf
+			Include /etc/caddy/coraza/panel.conf
+			SecRuleEngine On
+			SecAuditEngine RelevantOnly
+			SecAuditLogFormat JSON
+			SecAuditLogParts ABIJDEFHZ
+			SecAuditLog /var/log/caddy/coraza-audit.log
+		`
+	}
+}
+
+(hardened) {
+	header {
+		-Server
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Cross-Origin-Opener-Policy "same-origin"
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: {$PANEL_TILE_ORIGIN:https://tile.openstreetmap.org}; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	}
+}
+
+{$PANEL_SITE_ADDRESS:localhost} {
+	import waf
+	import hardened
+
+	# The API is read-only, so a query may arrive as a GET or a POST.
+	handle /graphql* {
+		reverse_proxy {$PANEL_API_UPSTREAM:127.0.0.1:8001}
+	}
+
+	handle /events* {
+		reverse_proxy {$PANEL_API_UPSTREAM:127.0.0.1:8001} {
+			# Notifications have to reach the browser as they are produced, not when a buffer
+			# happens to fill.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy {$PANEL_DASHBOARD_UPSTREAM:127.0.0.1:8080}
+	}
+
+	log {
+		output file /var/log/caddy/access.log
+		format json
+	}
+}

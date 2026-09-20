@@ -68,6 +68,21 @@ class Background:
     def start(self) -> None:
         self.thread.start()
 
+    def await_start(self) -> None:
+        """Wait until the server is serving, rather than until something answers its port.
+
+        A port already in use makes uvicorn exit its thread, and without this the harness would
+        cheerfully run the whole suite against whatever is already listening there.
+        """
+        deadline = time.monotonic() + START_TIMEOUT
+        while time.monotonic() < deadline:
+            if self.server.started:
+                return
+            if not self.thread.is_alive():
+                raise RuntimeError(f"{self.url} stopped before it started; is that port taken?")
+            time.sleep(0.05)
+        raise TimeoutError(f"{self.url} did not start within {START_TIMEOUT} seconds")
+
     def stop(self) -> None:
         self.server.should_exit = True
         self.thread.join(timeout=10)
@@ -180,6 +195,7 @@ def fixture_services(directory: Path) -> Generator[Sequence[Background]]:
         service.start()
     try:
         for service in services:
+            service.await_start()
             wait_for(service.url)
         yield services
     finally:

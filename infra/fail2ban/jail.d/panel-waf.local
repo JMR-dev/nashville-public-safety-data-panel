@@ -1,0 +1,12 @@
+# Five requests the firewall refused, from one address, within ten minutes, earn an hour off.
+# The ban covers every port, because an address probing the application has no other business
+# with this host.
+[panel-waf]
+enabled = true
+filter = panel-waf
+logpath = /var/log/caddy/coraza-audit.log
+backend = polling
+maxretry = 5
+findtime = 600
+bantime = 3600
+action = nftables[type=allports]
