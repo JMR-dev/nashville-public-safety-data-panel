@@ -1,0 +1,39 @@
+info:
+  name: Anchor
+  type: graphql
+  seq: 1
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Anchor {
+        dataVersion
+        serverTime
+      }
+    variables: |
+      {}
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.errors
+      operator: isUndefined
+    - expression: res.body.data.dataVersion
+      operator: eq
+      value: 2
+    - expression: res.body.data.serverTime
+      operator: eq
+      value: "2026-09-19T12:00:00+00:00"
+  scripts:
+    - type: tests
+      code: |
+        test("the server's time is a UTC instant the browser can parse", function () {
+          expect(res.body.data.serverTime).to.match(/\+00:00$/);
+          expect(Number.isNaN(Date.parse(res.body.data.serverTime))).to.equal(false);
+        });
+docs: |
+  The dashboard opens with this: the data version it pins every other query to, and the
+  server's clock, so a browser with a wrong clock still asks for the right hours. The fixture
+  API reports a fixed clock, which is why the instant asserted here is a constant.

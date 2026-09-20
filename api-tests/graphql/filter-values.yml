@@ -1,0 +1,43 @@
+info:
+  name: Filter values
+  type: graphql
+  seq: 10
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query FilterValues($since: DateTime!, $until: DateTime!) {
+        filterValues(since: $since, until: $until) {
+          ZONE_
+          Sector
+          Tencode_Description
+          Disposition_Description
+        }
+      }
+    variables: |
+      {
+        "since": "{{since}}",
+        "until": "{{until}}"
+      }
+runtime:
+  assertions:
+    - expression: res.body.errors
+      operator: isUndefined
+  scripts:
+    - type: tests
+      code: |
+        test("each list holds the published values in the period, sorted and without repeats", function () {
+          const values = res.body.data.filterValues;
+          expect(values.ZONE_).to.deep.equal(["15", "23", "31"]);
+          expect(values.Sector).to.deep.equal(["C1", "N2"]);
+          expect(values.Tencode_Description).to.deep.equal(["3", "ALARM - BURGLAR", "TRAFFIC VIOLATION"]);
+          expect(values.Disposition_Description).to.deep.equal(["ASSISTED CITIZEN", "REPORT TAKEN"]);
+        });
+
+        test("a value the source never published is not offered", function () {
+          expect(res.body.data.filterValues.Sector).to.not.contain("S4");
+        });
+docs: |
+  The filter menus. They list what the source actually published in the chosen period, so a
+  reader cannot filter down to a value that cannot match.

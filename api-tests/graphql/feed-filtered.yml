@@ -1,0 +1,40 @@
+info:
+  name: Feed, narrowed to a zone
+  type: graphql
+  seq: 6
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Feed($filter: CallFilter!, $first: Int!, $asOfVersion: Int!) {
+        calls(filter: $filter, first: $first, asOfVersion: $asOfVersion) {
+          nodes {
+            id
+            record {
+              ZONE_
+            }
+          }
+        }
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}", "ZONE_": ["15"] },
+        "first": 50,
+        "asOfVersion": 2
+      }
+runtime:
+  assertions:
+    - expression: res.body.data.calls.nodes
+      operator: length
+      value: 2
+  scripts:
+    - type: tests
+      code: |
+        test("only calls from the chosen zone come back", function () {
+          const zones = res.body.data.calls.nodes.map((call) => call.record.ZONE_);
+          expect(zones).to.deep.equal(["15", "15"]);
+        });
+docs: |
+  The filter takes the upstream value as published, including the trailing underscore in
+  ZONE_, which is the source's own field name.

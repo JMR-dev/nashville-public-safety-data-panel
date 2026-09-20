@@ -1,0 +1,33 @@
+info:
+  name: Date range longer than the maximum
+  type: graphql
+  seq: 2
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Feed($filter: CallFilter!) {
+        calls(filter: $filter, first: 50) {
+          nodes {
+            id
+          }
+        }
+      }
+    variables: |
+      {
+        "filter": { "since": "2026-01-01T00:00:00+00:00", "until": "{{until}}" }
+      }
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.data
+      operator: isNull
+    - expression: res.body.errors[0].message
+      operator: eq
+      value: The date range cannot exceed 92 days
+docs: |
+  One request cannot ask for a year of calls. The dashboard's own custom range control stops
+  at the same 92 days, so this is the server holding the same line.

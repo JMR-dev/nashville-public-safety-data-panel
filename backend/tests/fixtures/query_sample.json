@@ -1,0 +1,309 @@
+{
+  "objectIdFieldName": "OBJECTID",
+  "uniqueIdField": {
+    "name": "OBJECTID",
+    "isSystemMaintained": true
+  },
+  "globalIdFieldName": "",
+  "geometryType": "esriGeometryPoint",
+  "spatialReference": {
+    "wkid": 102100,
+    "latestWkid": 3857
+  },
+  "fields": [
+    {
+      "name": "OBJECTID",
+      "type": "esriFieldTypeOID",
+      "alias": "Object ID",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"System-generated unique record identifier for each feature.\",\"fieldValueType\":\"uniqueIdentifier\"}"
+    },
+    {
+      "name": "Event_Number",
+      "type": "esriFieldTypeString",
+      "alias": "Event Number",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Police event number assigned to the call for service record.\",\"fieldValueType\":\"uniqueIdentifier\"}"
+    },
+    {
+      "name": "Complaint_Number",
+      "type": "esriFieldTypeDouble",
+      "alias": "Complaint Number",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Complaint or case number associated with the call for service.\",\"fieldValueType\":\"uniqueIdentifier\"}"
+    },
+    {
+      "name": "Tencode",
+      "type": "esriFieldTypeInteger",
+      "alias": "Tencode",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Numeric call type code used by Metro Nashville Police Department.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Tencode_Description",
+      "type": "esriFieldTypeString",
+      "alias": "Tencode Description",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Text description of the Tencode call type.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Tencode_Suffix",
+      "type": "esriFieldTypeString",
+      "alias": "Tencode Suffix",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Code suffix that further qualifies the Tencode call type.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Tencode_Suffix_Description",
+      "type": "esriFieldTypeString",
+      "alias": "Tencode Suffix Description",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Text description of the Tencode suffix.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Disposition_Code",
+      "type": "esriFieldTypeString",
+      "alias": "Disposition Code",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Code describing the outcome or handling of the call.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Disposition_Description",
+      "type": "esriFieldTypeString",
+      "alias": "Disposition Description",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Text description of the call disposition or outcome.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Block",
+      "type": "esriFieldTypeString",
+      "alias": "Block",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Street block number associated with the call location.\",\"fieldValueType\":\"locationOrPlaceName\"}"
+    },
+    {
+      "name": "Street_Name",
+      "type": "esriFieldTypeString",
+      "alias": "Street Name",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Street name associated with the call location.\",\"fieldValueType\":\"locationOrPlaceName\"}"
+    },
+    {
+      "name": "Unit_Dispatched",
+      "type": "esriFieldTypeString",
+      "alias": "Unit Dispatched",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Police unit dispatched to the call for service.\",\"fieldValueType\":\"nameOrTitle\"}"
+    },
+    {
+      "name": "Shift",
+      "type": "esriFieldTypeString",
+      "alias": "Shift",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Police shift during which the call was handled.\",\"fieldValueType\":\"orderedOrRanked\"}"
+    },
+    {
+      "name": "Sector",
+      "type": "esriFieldTypeString",
+      "alias": "Sector",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Police sector associated with the call location.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Mapped_Location",
+      "type": "esriFieldTypeString",
+      "alias": "Mapped Location",
+      "sqlType": "sqlTypeOther",
+      "length": 2147483647,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Geocoded or mapped location for the call.\",\"fieldValueType\":\"locationOrPlaceName\"}"
+    },
+    {
+      "name": "POINT_X",
+      "type": "esriFieldTypeDouble",
+      "alias": "POINT_X",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Longitude coordinate of the call location.\",\"fieldValueType\":\"coordinate\"}"
+    },
+    {
+      "name": "POINT_Y",
+      "type": "esriFieldTypeDouble",
+      "alias": "POINT_Y",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Latitude coordinate of the call location.\",\"fieldValueType\":\"coordinate\"}"
+    },
+    {
+      "name": "ZONE_",
+      "type": "esriFieldTypeString",
+      "alias": "Zone",
+      "sqlType": "sqlTypeOther",
+      "length": 256,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Police zone associated with the call location.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Latitude",
+      "type": "esriFieldTypeDouble",
+      "alias": "Latitude",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Latitude coordinate of the call location.\",\"fieldValueType\":\"coordinate\"}"
+    },
+    {
+      "name": "Longitude",
+      "type": "esriFieldTypeDouble",
+      "alias": "Longitude",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Longitude coordinate of the call location.\",\"fieldValueType\":\"coordinate\"}"
+    },
+    {
+      "name": "RPA",
+      "type": "esriFieldTypeString",
+      "alias": "RPA",
+      "sqlType": "sqlTypeOther",
+      "length": 256,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Response patrol area or related patrol assignment identifier.\",\"fieldValueType\":\"typeOrCategory\"}"
+    },
+    {
+      "name": "Call_Received",
+      "type": "esriFieldTypeDate",
+      "alias": "Call Received",
+      "sqlType": "sqlTypeOther",
+      "length": 8,
+      "domain": null,
+      "defaultValue": null,
+      "description": "{\"value\":\"Date and time the call for service was received by the Emergency Communications Center.\",\"fieldValueType\":\"dateAndTime\"}"
+    }
+  ],
+  "exceededTransferLimit": true,
+  "features": [
+    {
+      "attributes": {
+        "OBJECTID": 365978,
+        "Event_Number": "PD202600305341",
+        "Complaint_Number": null,
+        "Tencode": 3,
+        "Tencode_Description": "3",
+        "Tencode_Suffix": null,
+        "Tencode_Suffix_Description": null,
+        "Disposition_Code": "4",
+        "Disposition_Description": "ASSISTED CITIZEN",
+        "Block": null,
+        "Street_Name": null,
+        "Unit_Dispatched": "7316",
+        "Shift": "B",
+        "Sector": null,
+        "Mapped_Location": null,
+        "POINT_X": null,
+        "POINT_Y": null,
+        "ZONE_": null,
+        "Latitude": null,
+        "Longitude": null,
+        "RPA": null,
+        "Call_Received": 1776979024000
+      }
+    },
+    {
+      "attributes": {
+        "OBJECTID": 365977,
+        "Event_Number": "PD202600086295",
+        "Complaint_Number": null,
+        "Tencode": 3,
+        "Tencode_Description": "3",
+        "Tencode_Suffix": null,
+        "Tencode_Suffix_Description": null,
+        "Disposition_Code": "4",
+        "Disposition_Description": "ASSISTED CITIZEN",
+        "Block": null,
+        "Street_Name": null,
+        "Unit_Dispatched": "8156D",
+        "Shift": "B",
+        "Sector": null,
+        "Mapped_Location": null,
+        "POINT_X": null,
+        "POINT_Y": null,
+        "ZONE_": null,
+        "Latitude": null,
+        "Longitude": null,
+        "RPA": null,
+        "Call_Received": 1769905925000
+      }
+    },
+    {
+      "attributes": {
+        "OBJECTID": 365976,
+        "Event_Number": "PD202600338048",
+        "Complaint_Number": null,
+        "Tencode": 15,
+        "Tencode_Description": "15",
+        "Tencode_Suffix": "P",
+        "Tencode_Suffix_Description": "PROGRESS",
+        "Disposition_Code": "15",
+        "Disposition_Description": "COMMUNITY POLICING",
+        "Block": null,
+        "Street_Name": null,
+        "Unit_Dispatched": "6424",
+        "Shift": "A",
+        "Sector": null,
+        "Mapped_Location": null,
+        "POINT_X": null,
+        "POINT_Y": null,
+        "ZONE_": null,
+        "Latitude": null,
+        "Longitude": null,
+        "RPA": null,
+        "Call_Received": 1778078849000
+      }
+    }
+  ]
+}

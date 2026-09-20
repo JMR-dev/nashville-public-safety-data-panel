@@ -1,0 +1,154 @@
+---
+- name: Refuse to configure anything but the platform this was written for
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'AlmaLinux'
+      - ansible_facts['distribution_major_version'] == '10'
+    fail_msg: >-
+      This role configures AlmaLinux 10; it found
+      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_major_version'] }}.
+
+# fail2ban is packaged by EPEL rather than by AlmaLinux itself.
+- name: Add the repository that packages the ban service
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+
+- name: Install what the host needs to run and protect the panel
+  ansible.builtin.dnf:
+    name: "{{ panel_packages }}"
+    state: present
+
+- name: Find out what the host came with
+  ansible.builtin.package_facts:
+
+# Two services writing firewall rules is how a host ends up open by accident, so nftables owns
+# filtering here and firewalld is put beyond use rather than merely stopped.
+- name: Take firewalld out of service
+  ansible.builtin.systemd_service:
+    name: firewalld
+    state: stopped
+    enabled: false
+    masked: true
+  when: "'firewalld' in ansible_facts['packages']"
+
+- name: Create the firewall's configuration directory
+  ansible.builtin.file:
+    path: /etc/nftables
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Write the addresses administration is accepted from
+  ansible.builtin.template:
+    src: panel-management.nft.j2
+    dest: /etc/nftables/panel-management.nft
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Reload the firewall
+
+- name: Install the host's ruleset
+  ansible.builtin.copy:
+    src: "{{ panel_infra }}/nftables/panel.nft"
+    dest: /etc/nftables/panel.nft
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Reload the firewall
+
+- name: Load the ruleset when the firewall starts
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible: the panel's ruleset is the host's ruleset.
+      include "/etc/nftables/panel.nft"
+    dest: /etc/sysconfig/nftables.conf
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Reload the firewall
+
+- name: Keep the firewall running and loaded at boot
+  ansible.builtin.systemd_service:
+    name: nftables
+    state: started
+    enabled: true
+
+# The proxy runs as this id inside its container, and the host needs a name for that id: the
+# log directory belongs to it, and logrotate will not take a number where a name belongs.
+- name: Name the id the proxy runs as
+  ansible.builtin.group:
+    name: caddy
+    gid: 10003
+    system: true
+
+- name: Give that id an account to own its files
+  ansible.builtin.user:
+    name: caddy
+    uid: 10003
+    group: caddy
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+    home: /var/lib/caddy
+
+- name: Make a place for the proxy's logs
+  ansible.builtin.file:
+    path: /var/log/caddy
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: "0750"
+
+# fail2ban refuses to start when a jail's log file is missing, and on a new host the proxy has
+# not written one yet, so the file is created before the jail is asked to watch it.
+- name: Make sure the audit log the ban service watches exists
+  ansible.builtin.file:
+    path: /var/log/caddy/coraza-audit.log
+    state: touch
+    owner: caddy
+    group: caddy
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Install the filter that reads the web firewall's audit log
+  ansible.builtin.copy:
+    src: "{{ panel_infra }}/fail2ban/filter.d/panel-waf.conf"
+    dest: /etc/fail2ban/filter.d/panel-waf.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the ban service
+
+- name: Install the jail that bans what the web firewall refused
+  ansible.builtin.copy:
+    src: "{{ panel_infra }}/fail2ban/jail.d/panel-waf.local"
+    dest: /etc/fail2ban/jail.d/panel-waf.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the ban service
+
+- name: Keep the ban service running and enabled at boot
+  ansible.builtin.systemd_service:
+    name: fail2ban
+    state: started
+    enabled: true
+
+- name: Rotate the proxy's logs, which the ban service also reads
+  ansible.builtin.copy:
+    src: "{{ panel_infra }}/logrotate/panel-caddy"
+    dest: /etc/logrotate.d/panel-caddy
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Let the proxy's container write to its log directory
+  community.general.sefcontext:
+    target: "/var/log/caddy(/.*)?"
+    setype: container_file_t
+    state: present
+  when: ansible_facts['selinux']['status'] == 'enabled'
+  notify: Apply the log directory's label

@@ -1,0 +1,29 @@
+info:
+  name: New calls since a version
+  type: graphql
+  seq: 7
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query NewCalls($filter: CallFilter!, $sinceVersion: Int!) {
+        first: newCallCount(filter: $filter, sinceVersion: $sinceVersion)
+        current: newCallCount(filter: $filter, sinceVersion: 2)
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}" },
+        "sinceVersion": 1
+      }
+runtime:
+  assertions:
+    - expression: res.body.data.first
+      operator: eq
+      value: 1
+    - expression: res.body.data.current
+      operator: eq
+      value: 0
+docs: |
+  How the dashboard offers "show N new calls" without reloading the feed: one call in the
+  window was first seen after version 1, and nothing is newer than the current version.

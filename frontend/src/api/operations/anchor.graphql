@@ -1,0 +1,4 @@
+query Anchor {
+  dataVersion
+  serverTime
+}

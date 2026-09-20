@@ -1,0 +1,31 @@
+info:
+  name: Query that costs too much
+  type: graphql
+  seq: 3
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query MapCalls($filter: CallFilter!) {
+        mapCalls(filter: $filter, limit: 99999) {
+          matching
+        }
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}" }
+      }
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.data
+      operator: isNull
+    - expression: res.body.errors[0].message
+      operator: eq
+      value: Query cost 100000 exceeds the maximum of 50000
+docs: |
+  Cost is counted before anything is read, from the sizes the query itself asks for, so an
+  expensive request is refused instead of served slowly.

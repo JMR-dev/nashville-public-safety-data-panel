@@ -1,0 +1,14 @@
+# The proxy's access log and the web firewall's audit log. fail2ban follows the audit log, so
+# it is copied and truncated rather than moved: a renamed file leaves the reader watching an
+# inode nobody writes to any more.
+/var/log/caddy/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su caddy caddy
+    create 0640 caddy caddy
+}

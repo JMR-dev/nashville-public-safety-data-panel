@@ -1,0 +1,20 @@
+query Status {
+  serverTime
+  sourceStatus {
+    source
+    state
+    detail
+    lastPollAt
+    lastChangeAt
+    latestCallReceivedAt
+    upstreamEditedAt
+    degradedSince
+    retryAt
+    backfill {
+      fraction
+      rangesTotal
+      rangesCompleted
+      completedAt
+    }
+  }
+}

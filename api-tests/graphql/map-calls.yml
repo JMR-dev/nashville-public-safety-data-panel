@@ -1,0 +1,58 @@
+info:
+  name: Map calls
+  type: graphql
+  seq: 9
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query MapCalls($filter: CallFilter!, $limit: Int!) {
+        mapCalls(filter: $filter, limit: $limit) {
+          matching
+          withCoordinates
+          truncated
+          calls {
+            id
+            record {
+              Latitude
+              Longitude
+            }
+          }
+        }
+      }
+    variables: |
+      {
+        "filter": { "since": "{{since}}", "until": "{{until}}" },
+        "limit": 4000
+      }
+runtime:
+  assertions:
+    - expression: res.body.data.mapCalls.matching
+      operator: eq
+      value: 4
+    - expression: res.body.data.mapCalls.withCoordinates
+      operator: eq
+      value: 2
+    - expression: res.body.data.mapCalls.truncated
+      operator: isFalsy
+  scripts:
+    - type: tests
+      code: |
+        test("every marker has a usable location, and 0,0 does not count as one", function () {
+          const calls = res.body.data.mapCalls.calls;
+          expect(calls.length).to.equal(res.body.data.mapCalls.withCoordinates);
+          for (const call of calls) {
+            expect(call.record.Latitude).to.be.a("number");
+            expect(call.record.Longitude).to.be.a("number");
+            expect(call.record.Latitude).to.not.equal(0);
+          }
+        });
+
+        test("the counts cover every matching call, not only the mapped ones", function () {
+          const map = res.body.data.mapCalls;
+          expect(map.matching).to.be.above(map.withCoordinates);
+        });
+docs: |
+  Markers are capped so one request cannot ask for the whole city, but the counts describe
+  every matching call, so the map can say how many it is not showing.

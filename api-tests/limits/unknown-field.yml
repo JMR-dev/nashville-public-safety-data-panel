@@ -1,0 +1,27 @@
+info:
+  name: Field that does not exist
+  type: graphql
+  seq: 4
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Unknown {
+        nope
+      }
+    variables: |
+      {}
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.data
+      operator: isNull
+    - expression: res.body.errors[0].message
+      operator: eq
+      value: Cannot query field 'nope' on type 'Query'.
+docs: |
+  Validation errors name the field, which is what a client needs to fix its query. Internal
+  errors are masked; only errors the API raises on purpose carry their message.

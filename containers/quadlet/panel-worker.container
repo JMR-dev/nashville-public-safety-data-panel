@@ -1,0 +1,27 @@
+# The ingestion worker: the only process that writes the database. It runs the migrations on
+# startup, so it is also what makes the API ready.
+[Unit]
+Description=Nashville public safety panel ingestion worker
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/panel-backend:latest
+Exec=worker
+Volume=panel-data.volume:/var/lib/panel:z
+Environment=PANEL_DATABASE=/var/lib/panel/panel.sqlite
+Environment=PANEL_BACKUP_DIR=/var/lib/panel/backups
+User=10001:10001
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+Tmpfs=/tmp
+
+[Service]
+Restart=always
+RestartSec=10
+# The worker finishes its current request and releases the writer lock when asked to stop.
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

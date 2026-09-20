@@ -1,0 +1,20 @@
+# The build context is the repository root. Nothing built, installed, or collected on a
+# developer's machine belongs in it: the images install their own dependencies.
+.git
+.github
+.venv
+**/node_modules
+**/dist
+**/dist-e2e
+**/coverage
+**/__pycache__
+.pytest_cache
+.ruff_cache
+test-results
+playwright-report
+data
+*.sqlite*
+coverage.json
+e2e
+api-tests
+docs

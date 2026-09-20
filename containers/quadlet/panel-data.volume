@@ -1,0 +1,6 @@
+# The database and its backups. The worker writes it; the API only reads it.
+[Unit]
+Description=Nashville public safety panel data
+
+[Volume]
+VolumeName=panel-data

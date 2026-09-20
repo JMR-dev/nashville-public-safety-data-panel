@@ -1,0 +1,13 @@
+name: local
+variables:
+  - name: baseUrl
+    value: http://127.0.0.1:8099
+  - name: unreadyUrl
+    value: http://127.0.0.1:8098
+  - name: probeUrl
+    value: http://127.0.0.1:8097
+  # The fixture window: the 24 hours before the fixture clock's noon.
+  - name: since
+    value: "2026-09-18T12:00:00+00:00"
+  - name: until
+    value: "2026-09-19T12:00:00+00:00"

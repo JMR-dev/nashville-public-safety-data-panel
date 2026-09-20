@@ -1,0 +1,18 @@
+info:
+  name: Liveness
+  type: http
+  seq: 1
+http:
+  url: "{{baseUrl}}/healthz"
+  method: GET
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.status
+      operator: eq
+      value: ok
+docs: |
+  Liveness answers without touching the database, so a container that is up says so even while
+  the database is unreadable.

@@ -1,0 +1,27 @@
+info:
+  name: Mutation against a read-only API
+  type: graphql
+  seq: 5
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      mutation Change {
+        deleteEverything
+      }
+    variables: |
+      {}
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.data
+      operator: isNull
+    - expression: res.body.errors[0].message
+      operator: eq
+      value: Schema is not configured to execute mutation operation.
+docs: |
+  The API publishes no mutations at all: the worker is the only writer. A mutation is refused
+  by the schema itself, not by a permission check that could be misconfigured.

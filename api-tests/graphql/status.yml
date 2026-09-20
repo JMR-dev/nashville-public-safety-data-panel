@@ -1,0 +1,68 @@
+info:
+  name: Status
+  type: graphql
+  seq: 2
+graphql:
+  url: "{{baseUrl}}/graphql"
+  method: POST
+  body:
+    query: |
+      query Status {
+        sourceStatus {
+          source
+          state
+          detail
+          latestCallReceivedAt
+          upstreamEditedAt
+          generation {
+            id
+            url
+            serviceItemId
+            layerName
+            active
+          }
+          backfill {
+            boundary
+            rangesTotal
+            rangesCompleted
+            fraction
+            completedAt
+          }
+        }
+      }
+    variables: |
+      {}
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: 200
+    - expression: res.body.data.sourceStatus[0].source
+      operator: eq
+      value: mnpd-calls
+    - expression: res.body.data.sourceStatus[0].state
+      operator: eq
+      value: BACKFILLING
+    - expression: res.body.data.sourceStatus[0].latestCallReceivedAt
+      operator: eq
+      value: "2026-09-19T11:00:00+00:00"
+    - expression: res.body.data.sourceStatus[0].generation.active
+      operator: isTruthy
+  scripts:
+    - type: tests
+      code: |
+        test("an unfinished backfill reports its progress and no completion time", function () {
+          const backfill = res.body.data.sourceStatus[0].backfill;
+          expect(backfill.rangesCompleted).to.be.below(backfill.rangesTotal);
+          expect(backfill.fraction).to.be.within(0, 1);
+          expect(backfill.completedAt).to.equal(null);
+        });
+
+        test("the status names the layer the retained records came from", function () {
+          const generation = res.body.data.sourceStatus[0].generation;
+          expect(generation.url).to.contain("services2.arcgis.com");
+          expect(generation.layerName).to.equal("MNPD_Calls_for_Service");
+        });
+docs: |
+  What the dashboard's status bar reads. A successful poll is not the same as new data, so the
+  status carries the upstream edit time and the newest call it has actually retained.

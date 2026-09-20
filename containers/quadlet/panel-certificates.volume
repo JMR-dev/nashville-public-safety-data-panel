@@ -1,0 +1,7 @@
+# Certificates Caddy obtains and renews. Losing these means asking a certificate authority for
+# new ones on every restart, which is how a deployment meets a rate limit.
+[Unit]
+Description=Nashville public safety panel certificates
+
+[Volume]
+VolumeName=panel-certificates

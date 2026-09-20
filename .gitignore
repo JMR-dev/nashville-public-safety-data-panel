@@ -4,9 +4,11 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .coverage*
+coverage.json
 coverage/
 htmlcov/
 dist/
+dist-e2e/
 test-results/
 playwright-report/
 .env

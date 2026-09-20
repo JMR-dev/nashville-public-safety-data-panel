@@ -1,0 +1,11 @@
+[Unit]
+Description=Take a daily backup of the panel database
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=panel-backup.service
+
+[Install]
+WantedBy=timers.target

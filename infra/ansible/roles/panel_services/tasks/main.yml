@@ -1,0 +1,112 @@
+---
+- name: Make sure the system Quadlet directory exists
+  ansible.builtin.file:
+    path: /etc/containers/systemd
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the units that run the panel
+  ansible.builtin.copy:
+    src: "{{ panel_quadlets }}/{{ item }}"
+    dest: "/etc/containers/systemd/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ panel_units }}"
+  notify: Reload systemd
+
+# Quadlet generates services, not timers, so the backup's schedule is an ordinary unit.
+- name: Install the backup's schedule
+  ansible.builtin.copy:
+    src: "{{ panel_quadlets }}/panel-backup.timer"
+    dest: /etc/systemd/system/panel-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Make a place for what this deployment adds to the proxy
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: caddy
+    mode: "0750"
+  loop:
+    - /etc/caddy/conf.d
+    - /etc/caddy/acme
+
+- name: Give the proxy the credentials it proves this deployment's name with
+  ansible.builtin.copy:
+    src: "{{ panel_acme_credentials }}"
+    dest: /etc/caddy/acme/dns-credentials.json
+    owner: root
+    group: caddy
+    mode: "0640"
+  when: panel_acme_credentials | length > 0
+  notify: Restart the proxy
+
+- name: Ask for a certificate through a DNS challenge
+  ansible.builtin.template:
+    src: tls.caddy.j2
+    dest: /etc/caddy/conf.d/tls.caddy
+    owner: root
+    group: caddy
+    mode: "0640"
+  when: panel_acme_credentials | length > 0
+  notify: Restart the proxy
+
+# Taking the setting away takes the configuration away: the proxy goes back to issuing its own.
+- name: Leave certificates to the proxy when no challenge is configured
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/caddy/conf.d/tls.caddy
+    - /etc/caddy/acme/dns-credentials.json
+  when: panel_acme_credentials | length == 0
+  notify: Restart the proxy
+
+- name: Make a place for each unit's deployment settings
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ panel_configured_units }}"
+
+- name: Give the units this deployment's own settings
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible. What differs between deployments lives here, so that the units
+      # themselves are the same wherever they run.
+      [Service]
+      Environment=PANEL_SITE_ADDRESS={{ panel_site_address }}
+      Environment=PANEL_API_UPSTREAM={{ panel_api_upstream }}
+      Environment=PANEL_DASHBOARD_UPSTREAM={{ panel_dashboard_upstream }}
+      Environment=PANEL_BACKUP_KEEP={{ panel_backup_keep }}
+      Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/caddy/acme/dns-credentials.json
+    dest: "/etc/systemd/system/{{ item }}.service.d/deployment.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ panel_configured_units }}"
+  notify: Reload systemd
+
+# Quadlet's own generator enables the containers it generates, through the [Install] section in
+# each unit. The timer is an ordinary unit, so it is enabled here.
+- name: Take the backup every night
+  ansible.builtin.systemd_service:
+    name: panel-backup.timer
+    enabled: true
+    daemon_reload: true
+
+- name: Start the panel
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+  loop: "{{ panel_services }}"
+  when: panel_start_services | bool

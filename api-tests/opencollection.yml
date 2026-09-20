@@ -1,0 +1,14 @@
+opencollection: "1.0.0"
+info:
+  name: Nashville Public Safety Panel API
+  description: |
+    The panel's HTTP surface, asserted against a fixture-backed API.
+
+    Start the services and run the collection in one command:
+
+        uv run python -m tests.fixture_api run -- pnpm exec bru run api-tests -r --env local
+
+    The fixture data is the dataset the API's Python tests use, so the numbers asserted here
+    are the same records those tests assert on. The GraphQL documents are copies of the ones
+    the dashboard sends (frontend/src/api/operations); backend/tests/test_api_operations.py
+    runs those originals against the API, so this collection is free to trim their selections.

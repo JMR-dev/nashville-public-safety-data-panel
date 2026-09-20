@@ -1,180 +1,513 @@
-"""SQLite persistence. All ingestion mutations happen through one writer."""
+"""Ingestion persistence. The worker process is the only writer."""
 
+import fcntl
 import hashlib
 import json
-import sqlite3
 import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from enum import StrEnum
+from io import TextIOWrapper
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, Unpack
 
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import Connection, and_, create_engine, event, func, or_, select
+from sqlalchemy import Connection, RowMapping, select, update
 from sqlalchemy.dialects.sqlite import insert
-from sqlalchemy.engine import Engine
 
+from panel.database import open_engine, upgrade
 from panel.tables import (
-    INTEGER_FIELDS, REAL_FIELDS, TEXT_FIELDS, calls, checkpoints, generations, state,
+    ATTRIBUTE_FIELDS,
+    SOURCE_FIELDS,
+    calls,
+    checkpoints,
+    generations,
+    schema_snapshots,
+    source_status,
+    state,
 )
 
-
-def configure_sqlite(connection: sqlite3.Connection, _record: Any) -> None:
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA busy_timeout=5000")
-    connection.execute("PRAGMA foreign_keys=ON")
+Clock = Callable[[], int]
+CHUNK = 500
 
 
-class Store:
-    def __init__(self, path: Path):
+def system_clock() -> int:
+    return time.time_ns() // 1_000_000
+
+
+class SourceState(StrEnum):
+    STARTING = "starting"
+    BACKFILLING = "backfilling"
+    LIVE = "live"
+    DEGRADED = "degraded"
+    SCHEMA_INCOMPATIBLE = "schema_incompatible"
+
+
+class WriterBusy(Exception):
+    """Another process already holds this database's writer lock."""
+
+
+@dataclass(frozen=True)
+class Provenance:
+    url: str
+    service_item_id: str | None
+    layer_name: str | None
+
+
+@dataclass(frozen=True)
+class Generation:
+    id: int
+    source: str
+    url: str
+    service_item_id: str | None
+    layer_name: str | None
+    reason: str
+    created_at: int
+    active: bool
+    retired_at: int | None
+    boundary: int | None
+    backfill_completed_at: int | None
+
+
+@dataclass(frozen=True)
+class Progress:
+    """A checkpoint advanced in the same transaction as the page it follows."""
+
+    name: str
+    cursor: int
+    complete: bool = False
+
+
+@dataclass(frozen=True)
+class RangeCheckpoint:
+    name: str
+    lower: int
+    upper: int
+    cursor: int
+    completed: bool
+
+
+@dataclass(frozen=True)
+class PageResult:
+    inserted: int
+    changed: int
+    unchanged: int
+    version: int
+
+
+class StatusChanges(TypedDict, total=False):
+    generation: int | None
+    state: SourceState
+    detail: str | None
+    last_poll_at: int | None
+    upstream_edit_at: int | None
+    degraded_since: int | None
+    retry_at: int | None
+    window_reconciled_at: int | None
+    full_reconciled_at: int | None
+
+
+def fingerprint(value: Any) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def range_name(lower: int, upper: int) -> str:
+    return f"backfill:{lower}-{upper}"
+
+
+def _chunks(values: Sequence[int]) -> Iterable[Sequence[int]]:
+    return (values[start : start + CHUNK] for start in range(0, len(values), CHUNK))
+
+
+def _generation(row: RowMapping) -> Generation:
+    return Generation(**row)
+
+
+class Writer:
+    def __init__(self, path: Path, *, clock: Clock = system_clock) -> None:
         self.path = path
-        self.engine: Engine = create_engine(f"sqlite:///{path}")
-        event.listen(self.engine, "connect", configure_sqlite)
+        self.clock = clock
+        self.engine = open_engine(path, writer=True)
+        self._lock: TextIOWrapper | None = None
+
+    def lock(self) -> None:
+        """Take the writer lock, or keep the one this writer already holds."""
+        if self._lock is not None:
+            return
+        handle = self.path.with_name(self.path.name + ".writer-lock").open("w")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            handle.close()
+            raise WriterBusy(f"{self.path} already has a writer") from error
+        self._lock = handle
 
     def initialize(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        config = Config()
-        config.set_main_option("script_location", str(Path(__file__).parents[1] / "migrations"))
-        with self.engine.begin() as connection:
-            config.attributes["connection"] = connection
-            command.upgrade(config, "head")
+        upgrade(self.engine)
 
     def close(self) -> None:
         self.engine.dispose()
+        if self._lock is not None:
+            self._lock.close()
+            self._lock = None
 
-    def get(self, key: str, default: Any = None) -> Any:
-        with self.engine.connect() as connection:
-            value = connection.execute(select(state.c.value).where(state.c.key == key)).scalar()
-            return default if value is None else value
+    # Generations and provenance
 
-    @staticmethod
-    def _put(connection: Connection, key: str, value: Any) -> None:
-        connection.execute(insert(state).values(key=key, value=value).on_conflict_do_update(
-            index_elements=[state.c.key], set_={"value": value},
-        ))
-
-    def put(self, key: str, value: Any) -> None:
+    def start_generation(self, source: str, provenance: Provenance, reason: str) -> Generation:
+        now = self.clock()
         with self.engine.begin() as connection:
-            self._put(connection, key, value)
+            connection.execute(
+                update(generations)
+                .where(generations.c.source == source, generations.c.active.is_(True))
+                .values(active=False, retired_at=now)
+            )
+            row = connection.execute(
+                insert(generations)
+                .values(
+                    source=source,
+                    url=provenance.url,
+                    service_item_id=provenance.service_item_id,
+                    layer_name=provenance.layer_name,
+                    reason=reason,
+                    created_at=now,
+                    active=True,
+                )
+                .returning(*generations.c)
+            )
+            return _generation(row.mappings().one())
 
-    def version(self) -> int:
-        return int(self.get("version", 0))
-
-    def generation(self, source: str, upper: int, *, reset: bool = False) -> int:
-        with self.engine.begin() as connection:
-            row = connection.execute(select(generations).where(
-                generations.c.source == source, generations.c.active.is_(True),
-            )).mappings().first()
-            if row is not None and not reset:
-                return int(row["id"])
-            connection.execute(generations.update().where(generations.c.source == source)
-                               .values(active=False))
-            result = connection.execute(generations.insert().values(
-                source=source, upper=upper, active=True, schema={},
-            ).returning(generations.c.id))
-            return int(result.scalar_one())
-
-    def generation_info(self, generation: int) -> dict[str, Any]:
+    def active_generation(self, source: str) -> Generation | None:
         with self.engine.connect() as connection:
-            return dict(connection.execute(select(generations).where(
-                generations.c.id == generation,
-            )).mappings().one())
+            row = connection.execute(
+                select(generations).where(
+                    generations.c.source == source, generations.c.active.is_(True)
+                )
+            )
+            found = row.mappings().first()
+            return None if found is None else _generation(found)
 
-    def save_schema(self, generation: int, schema: dict[str, str]) -> None:
-        with self.engine.begin() as connection:
-            connection.execute(generations.update().where(generations.c.id == generation)
-                               .values(schema=schema))
-
-    def checkpoint(self, generation: int, name: str) -> int:
+    def generation(self, generation: int) -> Generation:
         with self.engine.connect() as connection:
-            value = connection.execute(select(checkpoints.c.cursor).where(
-                checkpoints.c.generation == generation, checkpoints.c.name == name,
-            )).scalar()
-            return 0 if value is None else int(value)
+            row = connection.execute(select(generations).where(generations.c.id == generation))
+            return _generation(row.mappings().one())
+
+    # Backfill boundary and checkpoints
+
+    def capture_boundary(
+        self, generation: int, boundary: int, ranges: Sequence[tuple[int, int]]
+    ) -> None:
+        """Record the backfill boundary and its disjoint ranges once per generation."""
+        now = self.clock()
+        with self.engine.begin() as connection:
+            captured = connection.execute(
+                update(generations)
+                .where(generations.c.id == generation, generations.c.boundary.is_(None))
+                .values(boundary=boundary)
+            )
+            if captured.rowcount == 0:
+                return
+            for lower, upper in ranges:
+                connection.execute(
+                    insert(checkpoints).values(
+                        generation=generation,
+                        name=range_name(lower, upper),
+                        lower=lower,
+                        upper=upper,
+                        cursor=lower,
+                        updated_at=now,
+                    )
+                )
+
+    def ranges(self, generation: int) -> list[RangeCheckpoint]:
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(checkpoints)
+                .where(checkpoints.c.generation == generation, checkpoints.c.lower.is_not(None))
+                .order_by(checkpoints.c.lower)
+            )
+            return [
+                RangeCheckpoint(
+                    name=row["name"],
+                    lower=row["lower"],
+                    upper=row["upper"],
+                    cursor=row["cursor"],
+                    completed=row["completed_at"] is not None,
+                )
+                for row in rows.mappings()
+            ]
+
+    def checkpoint(self, generation: int, name: str) -> int | None:
+        with self.engine.connect() as connection:
+            return connection.execute(
+                select(checkpoints.c.cursor).where(
+                    checkpoints.c.generation == generation, checkpoints.c.name == name
+                )
+            ).scalar()
+
+    def complete_backfill(self, generation: int) -> bool:
+        """Mark the boundary complete only once every range has completed."""
+        now = self.clock()
+        with self.engine.begin() as connection:
+            pending = connection.execute(
+                select(checkpoints.c.name).where(
+                    checkpoints.c.generation == generation,
+                    checkpoints.c.lower.is_not(None),
+                    checkpoints.c.completed_at.is_(None),
+                )
+            ).first()
+            if pending is not None:
+                return False
+            boundary = connection.execute(
+                update(generations)
+                .where(generations.c.id == generation)
+                .values(backfill_completed_at=now)
+                .returning(generations.c.boundary)
+            ).scalar_one()
+            connection.execute(
+                insert(checkpoints)
+                .values(generation=generation, name="live", cursor=boundary, updated_at=now)
+                .on_conflict_do_nothing()
+            )
+            return True
+
+    # Records
 
     def commit_page(
-        self, generation: int, name: str, rows: list[dict[str, Any]], cursor: int, run: str = "",
-    ) -> None:
-        now = int(time.time() * 1000)
+        self,
+        generation: int,
+        rows: Sequence[Mapping[str, Any]],
+        progress: Progress | None = None,
+    ) -> PageResult:
+        """Upsert one page of source records and its checkpoint in a single transaction."""
+        now = self.clock()
         with self.engine.begin() as connection:
-            changed = False
-            for row in rows:
-                fingerprint = hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()
-                existing = connection.execute(select(calls.c.fingerprint, calls.c.source_present)
-                    .where(calls.c.generation == generation, calls.c.OBJECTID == row["OBJECTID"]))
-                old = existing.first()
-                values: dict[str, Any] = {
-                    field: row.get(field) for field in (*TEXT_FIELDS, *REAL_FIELDS, *INTEGER_FIELDS)
-                }
-                values.update(raw=row, fingerprint=fingerprint, observed_at=now,
-                              source_present=True, seen_run=run)
-                connection.execute(insert(calls).values(
-                    generation=generation, OBJECTID=row["OBJECTID"], **values,
-                ).on_conflict_do_update(index_elements=[calls.c.generation, calls.c.OBJECTID],
-                                        set_=values))
-                changed = changed or old is None or old.fingerprint != fingerprint or not old.source_present
-            connection.execute(insert(checkpoints).values(
-                generation=generation, name=name, cursor=cursor,
-            ).on_conflict_do_update(index_elements=[checkpoints.c.generation, checkpoints.c.name],
-                                    set_={"cursor": cursor}))
-            self._put(connection, "last_poll", now)
-            if changed:
-                self._bump(connection, now)
+            version = self._version(connection)
+            pending = version + 1
+            by_id = {int(row["OBJECTID"]): row for row in rows}
+            existing = self._existing(connection, generation, list(by_id))
+            written: list[dict[str, Any]] = []
+            unchanged: list[int] = []
+            inserted = changed = 0
+            for oid, row in by_id.items():
+                digest = fingerprint(row)
+                previous = existing.get(oid)
+                if previous == (digest, True):
+                    unchanged.append(oid)
+                    continue
+                inserted += previous is None
+                changed += previous is not None
+                values: dict[str, Any] = {name: row.get(name) for name in ATTRIBUTE_FIELDS}
+                written.append(
+                    {
+                        **values,
+                        "generation": generation,
+                        "OBJECTID": oid,
+                        "extra": {
+                            name: value for name, value in row.items() if name not in SOURCE_FIELDS
+                        },
+                        "fingerprint": digest,
+                        "first_seen_at": now,
+                        "last_seen_at": now,
+                        "last_changed_at": now,
+                        "first_seen_version": pending,
+                        "changed_version": pending,
+                        "source_present": True,
+                        "removed_at": None,
+                    }
+                )
+            if written:
+                # One statement for the whole page. A record already stored keeps the time and
+                # version it was first seen at; everything the source publishes is replaced.
+                statement = insert(calls)
+                connection.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[calls.c.generation, calls.c.OBJECTID],
+                        set_={
+                            name: statement.excluded[name]
+                            for name in (
+                                *ATTRIBUTE_FIELDS,
+                                "extra",
+                                "fingerprint",
+                                "last_seen_at",
+                                "last_changed_at",
+                                "changed_version",
+                                "source_present",
+                                "removed_at",
+                            )
+                        },
+                    ),
+                    written,
+                )
+            for chunk in _chunks(unchanged):
+                connection.execute(
+                    update(calls)
+                    .where(calls.c.generation == generation, calls.c.OBJECTID.in_(chunk))
+                    .values(last_seen_at=now)
+                )
+            if progress is not None:
+                self._advance(connection, generation, progress, now)
+            modified = bool(written)
+            if modified:
+                self._set_version(connection, pending)
+            self._touch(connection, generation, now, modified=modified)
+            return PageResult(inserted, changed, len(unchanged), pending if modified else version)
 
-    def _bump(self, connection: Connection, now: int) -> None:
-        version = connection.execute(select(state.c.value).where(state.c.key == "version")).scalar()
-        self._put(connection, "version", int(version or 0) + 1)
-        self._put(connection, "last_change", now)
-
-    def mark_missing(self, generation: int, run: str, upper: int) -> None:
+    def mark_removed(self, generation: int, oids: Iterable[int]) -> int:
+        """Retain records that left the source, recording when they were found missing."""
+        now = self.clock()
+        ids = sorted(set(oids))
         with self.engine.begin() as connection:
-            ids = connection.execute(select(calls.c.OBJECTID).where(
-                calls.c.generation == generation, calls.c.OBJECTID <= upper,
-                calls.c.seen_run != run, calls.c.source_present.is_(True),
-            )).scalars().all()
-            if ids:
-                connection.execute(calls.update().where(
-                    calls.c.generation == generation, calls.c.OBJECTID.in_(ids),
-                ).values(source_present=False))
-                self._bump(connection, int(time.time() * 1000))
+            pending = self._version(connection) + 1
+            removed = 0
+            for chunk in _chunks(ids):
+                removed += connection.execute(
+                    update(calls)
+                    .where(
+                        calls.c.generation == generation,
+                        calls.c.OBJECTID.in_(chunk),
+                        calls.c.source_present.is_(True),
+                    )
+                    .values(
+                        source_present=False,
+                        removed_at=now,
+                        last_changed_at=now,
+                        changed_version=pending,
+                    )
+                ).rowcount
+            if removed:
+                self._set_version(connection, pending)
+                self._touch(connection, generation, now, modified=True)
+            return removed
 
-    def query(
-        self, filters: dict[str, Any], limit: int, cursor: tuple[int, int, int] | None,
-    ) -> list[dict[str, Any]]:
-        statement = select(calls)
-        for key, value in filters.items():
-            if key == "since":
-                statement = statement.where(calls.c.Call_Received >= value)
-            elif key == "until":
-                statement = statement.where(calls.c.Call_Received <= value)
-            else:
-                statement = statement.where(calls.c[key] == value)
-        timestamp = func.coalesce(calls.c.Call_Received, 0)
-        if cursor is not None:
-            received, oid, generation = cursor
-            statement = statement.where(or_(timestamp < received,
-                and_(timestamp == received, calls.c.OBJECTID < oid),
-                and_(timestamp == received, calls.c.OBJECTID == oid,
-                     calls.c.generation < generation)))
-        statement = statement.order_by(timestamp.desc(), calls.c.OBJECTID.desc(),
-                                       calls.c.generation.desc()).limit(limit)
+    def present_ids(self, generation: int, *, upper: int, since: int | None = None) -> set[int]:
+        statement = select(calls.c.OBJECTID).where(
+            calls.c.generation == generation,
+            calls.c.OBJECTID <= upper,
+            calls.c.source_present.is_(True),
+        )
+        if since is not None:
+            statement = statement.where(calls.c.Call_Received >= since)
         with self.engine.connect() as connection:
-            return [dict(row) for row in connection.execute(statement).mappings()]
+            return set(connection.execute(statement).scalars())
 
-    def detail(self, generation: int, oid: int) -> dict[str, Any] | None:
+    # Schema snapshots
+
+    def record_schema(
+        self,
+        generation: int,
+        fields: Sequence[Mapping[str, Any]],
+        *,
+        compatible: bool,
+        problems: Sequence[str],
+    ) -> bool:
+        """Store a schema snapshot when it differs from the latest one."""
+        digest = fingerprint(fields)
+        latest = self.latest_schema(generation)
+        if latest is not None and latest["fingerprint"] == digest:
+            return False
+        with self.engine.begin() as connection:
+            connection.execute(
+                insert(schema_snapshots).values(
+                    generation=generation,
+                    captured_at=self.clock(),
+                    fingerprint=digest,
+                    fields=list(fields),
+                    compatible=compatible,
+                    problems=list(problems),
+                )
+            )
+        return True
+
+    def latest_schema(self, generation: int) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
-            row = connection.execute(select(calls).where(
-                calls.c.generation == generation, calls.c.OBJECTID == oid,
-            )).mappings().first()
-            return None if row is None else dict(row)
+            row = connection.execute(
+                select(schema_snapshots)
+                .where(schema_snapshots.c.generation == generation)
+                .order_by(schema_snapshots.c.id.desc())
+                .limit(1)
+            ).mappings()
+            found = row.first()
+            return None if found is None else dict(found)
 
-    def facets(self) -> dict[str, list[str]]:
+    # Status and versioning
+
+    def set_status(self, source: str, **changes: Unpack[StatusChanges]) -> None:
+        now = self.clock()
+        with self.engine.begin() as connection:
+            connection.execute(
+                insert(source_status)
+                .values(
+                    {"source": source, "state": SourceState.STARTING, **changes, "updated_at": now}
+                )
+                .on_conflict_do_update(
+                    index_elements=[source_status.c.source],
+                    set_={**changes, "updated_at": now},
+                )
+            )
+
+    def data_version(self) -> int:
         with self.engine.connect() as connection:
-            return {field: list(connection.execute(select(calls.c[field]).where(
-                calls.c[field].is_not(None),
-            ).distinct().order_by(calls.c[field])).scalars()) for field in (
-                "ZONE_", "Sector", "Tencode_Description", "Disposition_Description",
-            )}
+            return self._version(connection)
 
-    def backup(self, destination: Path) -> None:
-        with sqlite3.connect(self.path) as source, sqlite3.connect(destination) as target:
-            source.backup(target)
+    # Transaction helpers
+
+    @staticmethod
+    def _version(connection: Connection) -> int:
+        value = connection.execute(
+            select(state.c.value).where(state.c.key == "data_version")
+        ).scalar()
+        return 0 if value is None else int(value)
+
+    @staticmethod
+    def _set_version(connection: Connection, version: int) -> None:
+        connection.execute(
+            insert(state)
+            .values(key="data_version", value=version)
+            .on_conflict_do_update(index_elements=[state.c.key], set_={"value": version})
+        )
+
+    @staticmethod
+    def _existing(
+        connection: Connection, generation: int, oids: Sequence[int]
+    ) -> dict[int, tuple[str, bool]]:
+        found: dict[int, tuple[str, bool]] = {}
+        for chunk in _chunks(oids):
+            rows = connection.execute(
+                select(calls.c.OBJECTID, calls.c.fingerprint, calls.c.source_present).where(
+                    calls.c.generation == generation, calls.c.OBJECTID.in_(chunk)
+                )
+            )
+            found.update({oid: (digest, present) for oid, digest, present in rows.tuples()})
+        return found
+
+    @staticmethod
+    def _advance(connection: Connection, generation: int, progress: Progress, now: int) -> None:
+        completed = now if progress.complete else None
+        connection.execute(
+            insert(checkpoints)
+            .values(
+                generation=generation,
+                name=progress.name,
+                cursor=progress.cursor,
+                completed_at=completed,
+                updated_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=[checkpoints.c.generation, checkpoints.c.name],
+                set_={"cursor": progress.cursor, "completed_at": completed, "updated_at": now},
+            )
+        )
+
+    @staticmethod
+    def _touch(connection: Connection, generation: int, now: int, *, modified: bool) -> None:
+        source = connection.execute(
+            select(generations.c.source).where(generations.c.id == generation)
+        ).scalar_one()
+        changes: dict[str, int] = {"last_poll_at": now, "updated_at": now}
+        if modified:
+            changes["last_change_at"] = now
+        connection.execute(
+            insert(source_status)
+            .values(source=source, state=SourceState.STARTING, **changes)
+            .on_conflict_do_update(index_elements=[source_status.c.source], set_=changes)
+        )
