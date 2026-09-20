@@ -12,7 +12,7 @@ import time
 from collections.abc import Generator, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 import pytest
@@ -23,7 +23,19 @@ ROOT = Path(__file__).parents[2]
 CONTAINERS = ROOT / "containers"
 QUADLETS = CONTAINERS / "quadlet"
 BACKEND_IMAGE = "localhost/panel-backend:test"
+PANEL_USER = "10001:10001"
+DASHBOARD_USER = "10002:10002"
 DASHBOARD_IMAGE = "localhost/panel-dashboard:test"
+# What the Quadlet units give their containers, so the images are exercised the way they run.
+HARDENING = (
+    "--read-only",
+    "--tmpfs",
+    "/tmp",
+    "--cap-drop",
+    "all",
+    "--security-opt",
+    "no-new-privileges",
+)
 GENERATORS = (
     Path("/usr/libexec/podman/quadlet"),
     Path("/usr/lib/podman/quadlet"),
@@ -63,11 +75,22 @@ def volume() -> Iterator[str]:
     podman("volume", "rm", "--force", name)
 
 
+class Service(NamedTuple):
+    name: str
+    url: str
+
+
 @contextmanager
 def serve(
-    image: str, port: int, *arguments: str, mount: str | None = None, listens_on: int | None = None
-) -> Generator[str]:
-    """Run a container while the test uses it, and give the address it serves on."""
+    image: str,
+    port: int,
+    *arguments: str,
+    user: str,
+    mount: str | None = None,
+    listens_on: int | None = None,
+    options: Sequence[str] = (),
+) -> Generator[Service]:
+    """Run a container under the restrictions its Quadlet imposes, while the test uses it."""
     name = f"panel-test-{time.monotonic_ns()}"
     volume = [] if mount is None else ["--volume", f"{mount}:/var/lib/panel:z"]
     podman(
@@ -75,6 +98,10 @@ def serve(
         "--detach",
         "--name",
         name,
+        "--user",
+        user,
+        *HARDENING,
+        *options,
         "--publish",
         f"127.0.0.1:{port}:{listens_on or port}",
         *volume,
@@ -82,7 +109,7 @@ def serve(
         *arguments,
     )
     try:
-        yield f"http://127.0.0.1:{port}"
+        yield Service(name, f"http://127.0.0.1:{port}")
     finally:
         podman("rm", "--force", "--time", "5", name)
 
@@ -117,27 +144,24 @@ def test_the_backend_image_migrates_a_fresh_volume_and_then_serves_it(
     )
     assert "/var/lib/panel/panel.sqlite is at revision" in migrated
 
-    with serve(
-        backend_image, 18101, "api", "--host", "0.0.0.0", "--port", "18101", mount=volume
-    ) as base:
-        assert wait_for(f"{base}/healthz").json() == {"status": "ok"}
-        readiness = httpx.get(f"{base}/readyz", timeout=5)
+    with serve(backend_image, 18101, user=PANEL_USER, mount=volume, listens_on=8001) as api:
+        assert wait_for(f"{api.url}/healthz").json() == {"status": "ok"}
+        readiness = httpx.get(f"{api.url}/readyz", timeout=5)
         assert readiness.status_code == 200
         assert readiness.json()["status"] == "ready"
 
 
 def test_the_api_reports_an_unmigrated_volume_as_not_ready(backend_image: str, volume: str) -> None:
-    with serve(
-        backend_image, 18102, "api", "--host", "0.0.0.0", "--port", "18102", mount=volume
-    ) as base:
-        wait_for(f"{base}/healthz")
-        readiness = httpx.get(f"{base}/readyz", timeout=5)
+    with serve(backend_image, 18102, user=PANEL_USER, mount=volume, listens_on=8001) as api:
+        wait_for(f"{api.url}/healthz")
+        readiness = httpx.get(f"{api.url}/readyz", timeout=5)
         assert readiness.status_code == 503
         assert "migrated" in readiness.json()["reason"]
 
 
 def test_the_dashboard_image_serves_the_built_dashboard(dashboard_image: str) -> None:
-    with serve(dashboard_image, 18103, listens_on=8080) as base:
+    with serve(dashboard_image, 18103, user=DASHBOARD_USER, listens_on=8080) as dashboard:
+        base = dashboard.url
         page = wait_for(f"{base}/")
         assert page.status_code == 200
         assert page.headers["content-type"].startswith("text/html")
@@ -170,6 +194,57 @@ def test_the_images_hold_no_build_tooling(backend_image: str, dashboard_image: s
         "run", "--rm", "--entrypoint", "sh", dashboard_image, "-c", "command -v node pnpm || true"
     )
     assert dashboard.strip() == ""
+
+
+def test_the_health_command_the_unit_configures_passes_against_a_running_api(
+    backend_image: str, volume: str
+) -> None:
+    """The command systemd will run to decide the API is healthy has to work in the image."""
+    podman("run", "--rm", "--volume", f"{volume}:/var/lib/panel:z", backend_image, "migrate")
+    unit = (QUADLETS / "panel-api.container").read_text()
+    health = next(
+        line.removeprefix("HealthCmd=")
+        for line in unit.splitlines()
+        if line.startswith("HealthCmd=")
+    )
+    with serve(
+        backend_image,
+        18104,
+        user=PANEL_USER,
+        mount=volume,
+        listens_on=8001,
+        options=("--health-cmd", health),
+    ) as api:
+        wait_for(f"{api.url}/healthz")
+        podman("healthcheck", "run", api.name)
+        state = podman("inspect", "--format", "{{.State.Health.Status}}", api.name)
+        assert state.strip() == "healthy"
+
+
+def test_a_deployment_can_point_the_map_at_its_own_tiles(dashboard_image: str) -> None:
+    """Tile servers are deployment-specific, so they are a build argument, not an edit."""
+    tiles = "https://tiles.example.test/{z}/{x}/{y}.png"
+    podman(
+        "build",
+        "--file",
+        str(CONTAINERS / "dashboard.Containerfile"),
+        "--build-arg",
+        f"VITE_TILE_URL={tiles}",
+        "--build-arg",
+        "VITE_TILE_ATTRIBUTION=Tiles by the city",
+        "--tag",
+        "localhost/panel-dashboard:tiles",
+        str(ROOT),
+    )
+    with serve(
+        "localhost/panel-dashboard:tiles", 18105, user=DASHBOARD_USER, listens_on=8080
+    ) as dashboard:
+        page = wait_for(f"{dashboard.url}/")
+        asset = re.search(r'/assets/[^"]+\.js', page.text)
+        assert asset is not None
+        script = httpx.get(f"{dashboard.url}{asset.group(0)}", timeout=5).text
+        assert tiles in script
+        assert "Tiles by the city" in script
 
 
 # Quadlets
