@@ -1,0 +1,22 @@
+# The built dashboard, served as static files behind Caddy.
+[Unit]
+Description=Nashville public safety panel dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/panel-dashboard:latest
+PublishPort=127.0.0.1:8080:8080
+User=10002:10002
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+# nginx keeps its pid file and request buffers here; nothing else needs to be writable.
+Tmpfs=/tmp
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

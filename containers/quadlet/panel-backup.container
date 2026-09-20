@@ -1,0 +1,19 @@
+# One backup, taken through SQLite's online backup API while the worker keeps running.
+[Unit]
+Description=Nashville public safety panel database backup
+
+[Container]
+Image=localhost/panel-backend:latest
+Exec=backup
+Volume=panel-data.volume:/var/lib/panel:z
+Environment=PANEL_DATABASE=/var/lib/panel/panel.sqlite
+Environment=PANEL_BACKUP_DIR=/var/lib/panel/backups
+Environment=PANEL_BACKUP_KEEP=7
+User=10001:10001
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+Tmpfs=/tmp
+
+[Service]
+Type=oneshot

@@ -24,6 +24,7 @@ GATES = {
     "Frontend tests, including their coverage gate": "pnpm --filter frontend test",
     "HTTP collections": "pnpm run test:api",
     "Browser flows": "pnpm run test:e2e",
+    "Container images and Quadlet units": "uv run pytest -m containers --no-cov",
 }
 
 

@@ -1,0 +1,31 @@
+# The read-only API. It can start before the database exists: /readyz reports whether the
+# schema the API expects is there yet.
+[Unit]
+Description=Nashville public safety panel API
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/panel-backend:latest
+Exec=api --host 0.0.0.0 --port 8001
+# Bound to the loopback address: Caddy runs with host networking and is the only way in, so
+# the proxy sees the real client address.
+PublishPort=127.0.0.1:8001:8001
+Volume=panel-data.volume:/var/lib/panel:z
+Environment=PANEL_DATABASE=/var/lib/panel/panel.sqlite
+User=10001:10001
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+Tmpfs=/tmp
+HealthCmd=python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz')"
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -25,6 +25,9 @@ packages = ["backend/panel"]
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 asyncio_mode = "auto"
+markers = [
+    "containers: builds and runs the container images; run with `pytest -m containers --no-cov`",
+]
 filterwarnings = [
     "error",
     # Approved exception (2026-09-19, docs/dependency-decisions.md): uvloop 0.22.1 calls
@@ -33,7 +36,9 @@ filterwarnings = [
     # message. Strict Pyright separately reports any use of deprecated APIs in our own code.
     "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning",
 ]
-addopts = "--cov=backend/panel --cov-branch --cov-report=term-missing --cov-report=json --cov-fail-under=100"
+# The container scenarios build images and start them, so they are selected explicitly rather
+# than run with every other test. CI runs them in their own job.
+addopts = "-m 'not containers' --cov=backend/panel --cov-branch --cov-report=term-missing --cov-report=json --cov-fail-under=100"
 
 [tool.coverage.run]
 source = ["backend/panel"]

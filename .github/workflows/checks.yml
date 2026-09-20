@@ -45,6 +45,21 @@ jobs:
       - run: pnpm exec tsc --noEmit -p tsconfig.json
       - run: pnpm --filter frontend test
 
+  containers:
+    name: Container images and Quadlets
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+      - name: Make sure podman is available
+        run: command -v podman || (sudo apt-get update && sudo apt-get install --yes podman)
+      - run: uv sync --frozen
+      # These scenarios run the application in containers, so they collect no in-process
+      # coverage; the Python coverage gate is the backend job's.
+      - run: uv run pytest -m containers --no-cov
+
   integration:
     name: API collections and end-to-end flows
     runs-on: ubuntu-24.04
