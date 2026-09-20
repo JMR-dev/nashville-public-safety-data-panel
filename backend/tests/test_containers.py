@@ -157,6 +157,73 @@ def test_a_deployment_can_point_the_map_at_its_own_tiles(dashboard_image: str) -
         assert "Tiles by the city" in script
 
 
+def test_a_backup_can_be_taken_and_restored_while_the_panel_runs(
+    backend_image: str, volume: str
+) -> None:
+    """A backup nobody has restored is a hope, so this one is taken, lost, and restored."""
+    podman("run", "--rm", "--volume", f"{volume}:/var/lib/panel:z", backend_image, "migrate")
+    with serve(backend_image, 18106, user=PANEL_USER, mount=volume, listens_on=8001) as api:
+        wait_for(f"{api.url}/healthz")
+        version = httpx.post(
+            f"{api.url}/graphql", json={"query": "{ dataVersion }"}, timeout=10
+        ).json()["data"]["dataVersion"]
+
+        # SQLite's own online backup, taken against the database the API is reading.
+        taken = podman(
+            "run", "--rm", "--volume", f"{volume}:/var/lib/panel:z", backend_image, "backup"
+        )
+        assert "/var/lib/panel/backups/panel-" in taken
+
+    stored = podman(
+        "run",
+        "--rm",
+        "--volume",
+        f"{volume}:/var/lib/panel:z",
+        "--entrypoint",
+        "sh",
+        backend_image,
+        "-c",
+        "ls /var/lib/panel/backups",
+    ).split()
+    assert stored
+
+    # The database is lost, along with the write-ahead log beside it.
+    podman(
+        "run",
+        "--rm",
+        "--volume",
+        f"{volume}:/var/lib/panel:z",
+        "--entrypoint",
+        "sh",
+        backend_image,
+        "-c",
+        "rm -f /var/lib/panel/panel.sqlite /var/lib/panel/panel.sqlite-wal "
+        "/var/lib/panel/panel.sqlite-shm",
+    )
+
+    # Restoring is a copy: the backup is a whole database, not an increment.
+    podman(
+        "run",
+        "--rm",
+        "--volume",
+        f"{volume}:/var/lib/panel:z",
+        "--entrypoint",
+        "sh",
+        backend_image,
+        "-c",
+        f"cp /var/lib/panel/backups/{stored[-1]} /var/lib/panel/panel.sqlite",
+    )
+
+    with serve(backend_image, 18107, user=PANEL_USER, mount=volume, listens_on=8001) as restored:
+        wait_for(f"{restored.url}/healthz")
+        readiness = httpx.get(f"{restored.url}/readyz", timeout=10)
+        assert readiness.status_code == 200
+        answered = httpx.post(
+            f"{restored.url}/graphql", json={"query": "{ dataVersion }"}, timeout=10
+        ).json()
+        assert answered["data"]["dataVersion"] == version
+
+
 # Quadlets
 
 
