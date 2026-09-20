@@ -4,6 +4,7 @@ A gate that only exists on a laptop stops being a gate, so these tests read the 
 fail when it drifts from the commands this project is actually checked with.
 """
 
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -83,6 +84,22 @@ def test_node_comes_from_the_pinned_version(workflow: dict[Any, Any]) -> None:
 def test_python_comes_from_the_pinned_version() -> None:
     """uv installs the interpreter named in .python-version when it syncs."""
     assert (ROOT / ".python-version").read_text().strip().startswith("3.14")
+
+
+def test_every_action_is_pinned_to_a_commit_with_its_version_beside_it(
+    workflow: dict[Any, Any],
+) -> None:
+    """A tag can be moved to point at different code; a commit cannot."""
+    used = [uses(step) for step in steps(workflow) if uses(step)]
+    assert used
+    for reference in used:
+        action, _, pin = reference.partition("@")
+        assert re.fullmatch(r"[0-9a-f]{40}", pin), f"{action} is pinned to {pin!r}, not a commit"
+    source = WORKFLOW.read_text()
+    for reference in used:
+        assert re.search(rf"uses: {re.escape(reference)} # v\d+\.\d+", source), (
+            f"{reference} has no version comment"
+        )
 
 
 def test_a_failed_browser_run_keeps_its_report(workflow: dict[Any, Any]) -> None:
